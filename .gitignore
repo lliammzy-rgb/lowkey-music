@@ -1,0 +1,9 @@
+node_modules/
+.env
+cookies.json
+1789407505843-player-script.js
+1789407505863-player-script.js
+bot.err.log
+bot.log
+opencode.json
+test_yt.tmp.js
