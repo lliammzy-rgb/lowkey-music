@@ -8,7 +8,8 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { color, statusEmbed, generateVolumeBar, miniNowPlayingFields } = require("../theme");
-const { playFromQuery } = require("../events");
+const { spotify } = require("../spotify");
+const { isURL } = require("distube");
 
 const notInVC = "Kamu harus ada di voice channel dulu.";
 const noQueue = "Belum ada antrian lagu.";
@@ -39,10 +40,43 @@ const commands = [
       
       await interaction.deferReply();
       const query = interaction.options.getString("query");
-      // link spotify/link lain/auto-search versi terbaik — logika sama dengan !play
-      await playFromQuery(interaction.member, voiceChannel, interaction.channel, query, (text) =>
-        interaction.editReply(text),
-      );
+      
+      // 1️⃣ Spotify URL → resolved via Spotify plugin → YouTube audio
+      if (spotify.parseSpotifyUrl(query)) {
+        try {
+          const songOrList = await spotify.resolve(query, client.plugins?.spotify);
+          await distube.play(voiceChannel, songOrList, {
+            textChannel: interaction.channel,
+            member: interaction.member,
+          });
+          await interaction.editReply("Diproses dari Spotify...");
+          return;
+        } catch (err) {
+          console.error("Spotify resolve error:", err);
+          // Jika gagal, turun ke pencarian YouTube biasa
+        }
+      }
+      
+      // 2️⃣ Direct audio URL (mp3/mp4) → DirectLink plugin
+      if (isURL(query)) {
+        await distube.play(voiceChannel, query, {
+          textChannel: interaction.channel,
+          member: interaction.member,
+        });
+        await interaction.editReply("Diproses langsung...");
+        return;
+      }
+      
+      // 3️⃣ Plain query → DisTube auto-search (YouTube default)
+      const songs = await client.distube.search(query, false);
+      if (!songs || !songs.length) {
+        return interaction.reply({ content: "Lagu tidak ditemukan.", flags: MessageFlags.Ephemeral });
+      }
+      await distube.play(voiceChannel, songs[0], {
+        textChannel: interaction.channel,
+        member: interaction.member,
+      });
+      await interaction.editReply("Diproses pencarian...");
     },
   },
   {
@@ -277,11 +311,7 @@ const commands = [
         const embed = new EmbedBuilder()
           .setColor(color)
           .setDescription("🤖 Autoplay diaktifkan. Selanjutnya, setelah lagu selesai, bot akan otomatis mencari lagu terkait dan menambahkannya ke antrian.");
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder().setEmoji("🤖").setStyle(ButtonStyle.Primary).setCustomId("autoplay_toggle"),
-          );
-        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       } else if (mode === "off") {
         if (interaction.client.distubeAutoplay) {
           interaction.client.distubeAutoplay.set(interaction.guildId, false);
@@ -292,21 +322,13 @@ const commands = [
         const embed = new EmbedBuilder()
           .setColor(color)
           .setDescription("🤖 Autoplay dimatikan.");
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder().setEmoji("🤖").setStyle(ButtonStyle.Secondary).setCustomId("autoplay_toggle"),
-          );
-        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       } else if (mode === "status") {
         const isOn = interaction.client.distubeAutoplay && interaction.client.distubeAutoplay.get(interaction.guildId);
         const embed = new EmbedBuilder()
           .setColor(color)
           .setDescription(`Autoplay: ${isOn ? "Aktif" : "Nonaktif"}`);
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder().setEmoji("🤖").setStyle(isOn ? ButtonStyle.Primary : ButtonStyle.Secondary).setCustomId("autoplay_toggle"),
-          );
-        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
     },
   },
