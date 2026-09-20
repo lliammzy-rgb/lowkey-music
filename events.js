@@ -29,28 +29,34 @@ function registerEvents(client) {
     const autoplay = client.distubeAutoplay?.get(queue.guildId);
     if (!autoplay) return;
     try {
-      // Cari lagu terkait (versi terbaik dari lagu yang tadi selesai)
+      // Ambil judul lagu yang tadi selesai (lagu terakhir di antrian)
       const related = queue.songs.length > 0 ? queue.songs[queue.songs.length - 1] : null;
       if (!related) return;
-      // Gunakan distube.search untuk cari versi terbaik (YouTube)
-      const songs = client.distube.search(related.url || related.name, false);
-      if (!songs || !songs.length) return;
-      const song = songs[0];
-      client.distube.play(queue.guild, song, {
-        textChannel: queue.textChannel,
-        member: queue.voiceChannel?.members?.me ?? null,
-      });
-      queue.textChannel
-        .send({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(color)
-              .setDescription(
-                `🤖 Autoplay: menambahkan lagu terkait [${song.name}](${song.url})`,
-              ),
-          ],
-        })
-        .catch(() => {});
+      // Gunakan distube.play (tidak ada method search di DisTube v5)
+      // DisTube akan otomatis mencari via plugin yang terdaftar (YouTube yt-dlp dulu)
+      const song = distube.play(
+        queue.voiceChannel,
+        related.name || related.url || "",
+        {
+          textChannel: queue.textChannel,
+          member: queue.voiceChannel?.members?.me ?? null,
+        }
+      );
+      // Distube.play returns a Song/Playlist, tapi kita cuma butuh konfirmasi
+      // jika song ada, kirim notifikasi ke channel
+      if (song) {
+        queue.textChannel
+          .send({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(color)
+                .setDescription(
+                  `🤖 Autoplay: menambahkan lagu terkait [${song.name}](${song.url})`,
+                ),
+            ],
+          })
+          .catch(() => {});
+      }
     } catch (err) {
       console.error("Autoplay error:", err);
     }

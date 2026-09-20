@@ -16,12 +16,13 @@ function generateVolumeBar(percent) {
 // Minimalist now playing embed fields
 // Returns object with color, title, and fields array for EmbedBuilder
 function miniNowPlayingFields(queue, song) {
+  const formatDuration = (duration) =>
+    duration
+      ? `${Math.floor(duration / 60)}:${Number(duration % 60).toFixed(2)}`
+      : "0:00";
+
   const progress = song.duration
-    ? `${Math.floor(song.duration / 60)}:${(song.duration % 60)
-        .toString()
-        .padStart(2, "0")} / ${Math.floor(
-        queue.songs[0]?.duration / 60,
-      )}:${(queue.songs[0]?.duration % 60).toString().padStart(2, "0")}`
+    ? `${formatDuration(song.duration)} / ${formatDuration(queue.songs[0]?.duration)}`
     : "Live";
 
   const volumeBar = generateVolumeBar(queue.volume);

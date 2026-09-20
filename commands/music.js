@@ -8,7 +8,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { color, statusEmbed, generateVolumeBar, miniNowPlayingFields } = require("../theme");
-const { spotify } = require("../spotify");
+const spotify = require("../spotify");
 const { isURL } = require("distube");
 
 const notInVC = "Kamu harus ada di voice channel dulu.";
@@ -44,7 +44,7 @@ const commands = [
       // 1️⃣ Spotify URL → resolved via Spotify plugin → YouTube audio
       if (spotify.parseSpotifyUrl(query)) {
         try {
-          const songOrList = await spotify.resolve(query, client.plugins?.spotify);
+          const songOrList = await spotify.resolve(query, distube.plugins?.spotify);
           await distube.play(voiceChannel, songOrList, {
             textChannel: interaction.channel,
             member: interaction.member,
@@ -53,7 +53,7 @@ const commands = [
           return;
         } catch (err) {
           console.error("Spotify resolve error:", err);
-          // Jika gagal, turun ke pencarian YouTube biasa
+          // Jika gagal, turun ke pencarian YouTube biasa (lanjut ke baris 50)
         }
       }
       
@@ -67,16 +67,17 @@ const commands = [
         return;
       }
       
-      // 3️⃣ Plain query → DisTube auto-search (YouTube default)
-      const songs = await client.distube.search(query, false);
-      if (!songs || !songs.length) {
-        return interaction.reply({ content: "Lagu tidak ditemukan.", flags: MessageFlags.Ephemeral });
+      // 3️⃣ Plain query → DisTube auto-search (YouTube default via plugin)
+      try {
+        await distube.play(voiceChannel, query, {
+          textChannel: interaction.channel,
+          member: interaction.member,
+        });
+        await interaction.editReply("Diproses pencarian...");
+      } catch (err) {
+        console.error("Play/search error:", err);
+        await interaction.followUp({ content: `Gagal memutar/lari: ${err.message}`, flags: MessageFlags.Ephemeral });
       }
-      await distube.play(voiceChannel, songs[0], {
-        textChannel: interaction.channel,
-        member: interaction.member,
-      });
-      await interaction.editReply("Diproses pencarian...");
     },
   },
   {
