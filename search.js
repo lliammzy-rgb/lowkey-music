@@ -141,4 +141,4 @@ async function searchBestYoutube(query) {
   return pickBest(songs.map((s) => ({ song: s, score: scoreCandidate(s, tokens, 0) })));
 }
 
-module.exports = { autoSearch, searchBestYoutube };
+module.exports = { autoSearch, searchBestYoutube, youtubeSearch };

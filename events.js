@@ -24,46 +24,26 @@ function registerEvents(client) {
     }
   });
 
-  // === Autoplay: when song finishes, add related song if enabled ===
-  client.distube.on("finish", (queue) => {
-    const autoplay = client.distubeAutoplay?.get(queue.guildId);
-    if (!autoplay) return;
-    try {
-      // Ambil judul lagu yang tadi selesai (lagu terakhir di antrian)
-      const related = queue.songs.length > 0 ? queue.songs[queue.songs.length - 1] : null;
-      if (!related) return;
-      // Gunakan distube.play (tidak ada method search di DisTube v5)
-      // DisTube akan otomatis mencari via plugin yang terdaftar (YouTube yt-dlp dulu)
-      const song = distube.play(
-        queue.voiceChannel,
-        related.name || related.url || "",
-        {
-          textChannel: queue.textChannel,
-          member: queue.voiceChannel?.members?.me ?? null,
-        }
-      );
-      // Distube.play returns a Song/Playlist, tapi kita cuma butuh konfirmasi
-      // jika song ada, kirim notifikasi ke channel
-      if (song) {
-        queue.textChannel
-          .send({
-            embeds: [
-              new EmbedBuilder()
-                .setColor(color)
-                .setDescription(
-                  `🤖 Autoplay: menambahkan lagu terkait [${song.name}](${song.url})`,
-                ),
-            ],
-          })
-          .catch(() => {});
-      }
-    } catch (err) {
-      console.error("Autoplay error:", err);
-    }
-  });
-
+  // === Autoplay ===
+  // Pakai autoplay NATIVE DisTube (queue.autoplay + _addRelatedSong). Tidak ada handler
+  // "finish" sendiri: kalau queue.autoplay true, DisTube tidak emit finish dan tidak
+  // membuang queue — lagu terkait otomatis ditambah & diputar.
+  //
+  // Urutan penting:
+  //  - playSong: sinkronkan flag native dengan preferensi user SEBELUM lagu ini selesai.
+  //  - playSong: lagu yang diminta bot sendiri (member == bot) = lagu autoplay → embed beda.
   client.distube.on("playSong", (queue, song) => {
-    queue.textChannel?.send({ embeds: [statusEmbed(queue, song)] }).catch(() => {});
+    // PENTING: Queue DisTube v5 TIDAK punya `.guildId` — id queue = guild id (`.id`)
+    queue.autoplay = Boolean(client.distubeAutoplay?.get(queue.id));
+
+    // Lagu yang "diminta" bot = hasil autoplay → embed beda dari request user
+    const isAutoplay = queue.autoplay && song.member?.id === client.user.id;
+    const embed = isAutoplay
+      ? new EmbedBuilder()
+          .setColor(color)
+          .setDescription(`🤖 **Autoplay**: [${song.name}](${song.url}) \`${song.formattedDuration}\``)
+      : statusEmbed(queue, song);
+    queue.textChannel?.send({ embeds: [embed] }).catch(() => {});
   });
 
   client.distube.on("addSong", (queue, song) => {
@@ -85,6 +65,19 @@ function registerEvents(client) {
           new EmbedBuilder()
             .setColor(color)
             .setDescription(`Playlist \`${playlist.name}\` ditambahkan (${playlist.songs.length} lagu) ke antrian.`),
+        ],
+      })
+      .catch(() => {});
+  });
+
+  // Autoplay aktif tapi tidak ada lagu terkait yang ketemu → beri tahu, jangan crash.
+  client.distube.on("noRelated", (queue) => {
+    queue.textChannel
+      ?.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(color)
+            .setDescription("🤖 Autoplay aktif, tapi tidak menemukan lagu terkait. Coba `/play` lagu lain."),
         ],
       })
       .catch(() => {});

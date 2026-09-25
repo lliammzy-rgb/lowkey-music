@@ -6,7 +6,7 @@ const { SoundCloudPlugin } = require("@distube/soundcloud");
 const { DeezerPlugin } = require("@distube/deezer");
 const { DirectLinkPlugin } = require("@distube/direct-link");
 const { YtDlpPlugin } = require("@distube/yt-dlp");
-const { YtSearchPlugin } = require("./ytsearch");
+const { YtSearchPlugin, getRelatedSongs } = require("./ytsearch");
 const { registerEvents } = require("./events");
 const commands = require("./commands");
 
@@ -29,6 +29,9 @@ const deezerPlugin = new DeezerPlugin();
 const ytDlpPlugin = new YtDlpPlugin({ update: true });
 // fallback search lagu Spotify/Deezer → mirror YouTube (bukan SoundCloud preview 30 dtk)
 const ytSearchPlugin = new YtSearchPlugin({ update: false });
+// WAJIB: @distube/yt-dlp bawaan getRelatedSongs() => [] → autoplay native DisTube selalu
+// NO_RELATED → queue dibuang → bot keluar voice. Ganti dengan pencarian YouTube.
+YtDlpPlugin.prototype.getRelatedSongs = getRelatedSongs;
 
 const distube = new DisTube.default(client, {
   // yt-dlp WAJIB plugin terakhir: validate() selalu true jadi menangkap semua URL

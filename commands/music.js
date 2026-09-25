@@ -306,31 +306,35 @@ const commands = [
       ),
     async execute(interaction, distube) {
       const mode = interaction.options.getString("mode");
+      const guildId = interaction.guildId;
+      interaction.client.distubeAutoplay = interaction.client.distubeAutoplay || new Map();
+      const queue = distube.getQueue(guildId);
+
       if (mode === "on") {
-        interaction.client.distubeAutoplay = interaction.client.distubeAutoplay || new Map();
-        interaction.client.distubeAutoplay.set(interaction.guildId, true);
+        interaction.client.distubeAutoplay.set(guildId, true);
+        if (queue) queue.autoplay = true;
         const embed = new EmbedBuilder()
           .setColor(color)
-          .setDescription("🤖 Autoplay diaktifkan. Selanjutnya, setelah lagu selesai, bot akan otomatis mencari lagu terkait dan menambahkannya ke antrian.");
-        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      } else if (mode === "off") {
-        if (interaction.client.distubeAutoplay) {
-          interaction.client.distubeAutoplay.set(interaction.guildId, false);
-        } else {
-          interaction.client.distubeAutoplay = new Map();
-          interaction.client.distubeAutoplay.set(interaction.guildId, false);
-        }
-        const embed = new EmbedBuilder()
-          .setColor(color)
-          .setDescription("🤖 Autoplay dimatikan.");
-        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      } else if (mode === "status") {
-        const isOn = interaction.client.distubeAutoplay && interaction.client.distubeAutoplay.get(interaction.guildId);
-        const embed = new EmbedBuilder()
-          .setColor(color)
-          .setDescription(`Autoplay: ${isOn ? "Aktif" : "Nonaktif"}`);
-        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+          .setDescription(
+            queue
+              ? "🤖 Autoplay **aktif**. Setelah antrian habis, bot memutarkan lagu dari artis/genre yang sama."
+              : "🤖 Autoplay **disimpan**. Nyalakan otomatis begitu ada lagu pertama diputar.",
+          );
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
+
+      if (mode === "off") {
+        interaction.client.distubeAutoplay.set(guildId, false);
+        if (queue) queue.autoplay = false;
+        const embed = new EmbedBuilder().setColor(color).setDescription("🤖 Autoplay **dimatikan**.");
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      }
+
+      const isOn = Boolean(interaction.client.distubeAutoplay.get(guildId));
+      const embed = new EmbedBuilder()
+        .setColor(color)
+        .setDescription(`Autoplay: **${isOn ? "Aktif" : "Nonaktif"}**${isOn && queue?.autoplay ? " (sedang jalan)" : ""}`);
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     },
   },
 ];
