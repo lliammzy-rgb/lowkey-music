@@ -86,18 +86,31 @@ async function autocompleteSearch(query, plugins, { limit = 25 } = {}) {
     const tokens = key.split(" ").filter(Boolean);
     const apple = await withBudget(itunesSearch(focused, 25), AUTO_BUDGET, "auto-itunes");
 
-    // iTunes mencari di judul DAN artis, jadi "ima" mengembalikan "Ima Boss" milik Meek Mill
-    // sama banyaknya dengan lagu yang benar-benar berjudul "Ima". Untuk query yang masih
-    // pendek, naikkan yang judulnya memang diawali kata kunci — user yang mengetik "ima"
-    // hampir selalu sedang mengeja judul, bukan mencari artis.
+    // Peringkat untuk autocomplete butuh logika sendiri, tidak bisa pakai scoreCandidate
+    // picker apa adanya. Dua masalah nyata yang harus ditangani:
+    //
+    //  a. normalize() membuang tanda kurung, jadi "Imagine (John Lennon)" milik Tackie &
+    //     G. Ferreila menjadi teks "imagine john lennon" — PERSIS sama dengan query yang
+    //     diketik user. Judulnya cocok sempurna, jadi cover ini mengalahkan "Imagine" milik
+    //     John Lennon sendiri. Solusinya: nilai kecocokan ARTIS secara terpisah. Artis yang
+    //     namanya terkandung dalam query (user mengetik "…john lennon") jauh lebih kuat
+    //     petunjuknya daripada judul yang kebetulan memuat kata yang sama.
+    //  b. iTunes mencari di judul DAN artis, jadi "ima" mengembalikan "Ima Boss" milik Meek
+    //     Mill sama banyaknya dengan lagu berjudul "Ima". Bonus awalan judul hanya masuk
+    //     akal untuk query SATU kata (user sedang mengeja satu judul). Untuk query panjang
+    //     bonus itu justru menyesatkan, seperti kasus (a).
+    const singleWord = tokens.length === 1;
     const scored = apple
       .map((song) => {
         const base = scoreCandidate(song, tokens, 0.15);
         const title = normalize(song.name || "");
-        const bonus = title.startsWith(key) ? 3 : title.includes(key) ? 1 : 0;
+        const artist = normalize(song.uploader?.name || "");
+        // artis muncul utuh di dalam query yang diketik → sinyal terkuat
+        const artistBonus = artist.length >= 3 && key.includes(artist) ? 4 : 0;
+        const titleBonus = singleWord ? (title.startsWith(key) ? 3 : title.includes(key) ? 1 : 0) : 0;
         return {
           song,
-          score: base + bonus,
+          score: base + artistBonus + titleBonus,
           kind: DIRECT_SOURCES.has(song.source) ? "direct" : "mirror",
         };
       })

@@ -140,6 +140,29 @@ const mkSong = (o) => new Song(o);
   const deduped = await autocompleteSearch("imagine lennon", plugins);
   assert.strictEqual(deduped.length, 1, "lagu yang sama tidak boleh memenuhi daftar saran");
 
+  // 5b. PERINGKAT. Bug nyata yang pernah terjadi: "Imagine (John Lennon)" oleh Tackie &
+  //     G. Ferreila (cover) mengalahkan "Imagine" milik John Lennon, karena normalize()
+  //     membuang tanda kurung sehingga judul cover itu jadi teks yang PERSIS sama dengan
+  //     query. Artis yang cocok harus menang.
+  ac._reset();
+  itunesItems = [
+    appleItem(1, "Imagine (John Lennon)", "Tackie & G. Ferreila"),
+    appleItem(2, "Imagine", "John Lennon"),
+  ];
+  const ranked = await autocompleteSearch("imagine john lennon", plugins);
+  assert.strictEqual(ranked[0].song.id, "2", `yang #1 harus John Lennon sendiri, dapat id ${ranked[0].song.id}`);
+  assert.strictEqual(ranked[0].song.uploader.name, "John Lennon");
+
+  // 5c. versi lain dari lagu yang sama diringkas jadi satu wakil di autocomplete
+  ac._reset();
+  itunesItems = [
+    appleItem(1, "Imagine", "John Lennon"),
+    appleItem(2, "Imagine (Take 1)", "John Lennon"),
+    appleItem(3, "Imagine (Remastered)", "John Lennon"),
+  ];
+  const collapsed = await autocompleteSearch("imagine john lennon", plugins);
+  assert.strictEqual(collapsed.length, 1, "versi lain dari lagu yang sama tidak boleh memenuhi daftar");
+
   // 6. query identik dua kali → jaringan cuma sekali
   ac._reset();
   itunesCalls = 0;
