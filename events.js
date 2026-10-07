@@ -8,6 +8,14 @@ function registerEvents(client) {
   // messageId → state picker (/play). Dibuat di sini supaya picker.js tidak perlu init.
   client.pickers = client.pickers || new Map();
 
+  // discord.js v14 bikin Client dengan captureRejections:true. Artinya rejection dari
+  // listener async DIUBAH jadi emit('error') di Client. Kalau tidak ada listener 'error',
+  // Node langsung mematikan proses. Tanpa baris ini, satu interaksi kadaluarsa
+  // (DiscordAPIError 10062) cukup untuk menjatuhkan seluruh bot.
+  client.on(Events.Error, (err) => {
+    console.error("[client error]", err?.code ?? "", err?.message ?? err);
+  });
+
   client.once(Events.ClientReady, (c) => {
     console.log(`Bot online sebagai ${c.user.tag}`);
     c.user.setActivity("Lowkey Music", { type: 4 });
@@ -36,9 +44,12 @@ function registerEvents(client) {
       await command.execute(interaction, client.distube);
     } catch (err) {
       console.error(err);
+      // .catch() WAJIB di sini. Kalau interaksi sudah kadaluarsa (10062), reply/followUp
+      // ini gagal juga — dan tanpa .catch() rejection-nya naik ke emit('error') → bot mati.
+      // Ini persis jalur yang dulu mematikan proses.
       const msg = { content: "Ada error, coba lagi.", flags: 1 << 6 };
-      if (interaction.deferred || interaction.replied) await interaction.followUp(msg);
-      else await interaction.reply(msg);
+      if (interaction.deferred || interaction.replied) await interaction.followUp(msg).catch(() => {});
+      else await interaction.reply(msg).catch(() => {});
     }
   });
 

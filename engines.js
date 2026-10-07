@@ -133,6 +133,7 @@ async function ytsrSearch(query, limit = 6) {
 
 module.exports = {
   withBudget,
+  readJson,
   itunesSearch,
   tidalSearch,
   ytsrSearch,

@@ -1,5 +1,16 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, Collection } = require("discord.js");
+
+// Jaring terakhir. SENGAJA tidak memanggil process.exit: host gratis (dan `npm start`
+// manual) tidak akan menyalakan ulang bot, jadi "mati bersih" = bot offline sampai
+// dinyalakan tangan. Lebih baik tetap hidup dengan state yang mungkin kotor + log penuh.
+// Kalau ini muncul terus, itu tanda ada bug yang belum diperbaiki — jangan diabaikan.
+process.on("unhandledRejection", (err) => {
+  console.error("[unhandledRejection]", err?.code ?? "", err?.message ?? err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err?.code ?? "", err?.message ?? err);
+});
 const DisTube = require("distube");
 const { SpotifyPlugin } = require("@distube/spotify");
 const { SoundCloudPlugin } = require("@distube/soundcloud");

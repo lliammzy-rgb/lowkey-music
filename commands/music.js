@@ -17,6 +17,11 @@ const notInVC = "Kamu harus ada di voice channel dulu.";
 const noQueue = "Belum ada antrian lagu.";
 const notPlaying = "Belum ada lagu yang diputar.";
 
+// Balasan yang gagal (interaksi kadaluarsa / pesan dihapus) tidak boleh naik ke
+// events.js lalu jadi emit('error'). Cukup dicatat.
+const safeEdit = (interaction, payload) =>
+  interaction.editReply(payload).catch((e) => console.warn(`[reply] ${e?.code ?? e?.message}`));
+
 // Cari lintas sumber lalu tampilkan menu pilih. Dipakai /play (query polos) dan /search.
 // `interaction` harus sudah di-reply "Sedang diproses..." sebelum fungsi ini dipanggil.
 // `voiceChannel` opsional: kalau tidak dikasih (/search), user memang cuma mau lihat daftar —
@@ -34,25 +39,26 @@ async function showPicker(interaction, query, started, voiceChannel) {
   // Semua mesin cepat kosong → kalau di voice, jalur cadangan yt-dlp (lambat 3.5-15 detik tapi pasti)
   if (!results.length) {
     if (!voiceChannel) {
-      await interaction.editReply(`🔎 Tidak menemukan hasil untuk \`${query}\`.`);
+      await safeEdit(interaction, `🔎 Tidak menemukan hasil untuk \`${query}\`.`);
       return;
     }
-    await interaction.editReply("🔎 Mesin cepat tidak menemukan apa-apa, pakai jalur cadangan (bisa 3-15 detik)...");
+    await safeEdit(interaction, "🔎 Mesin cepat tidak menemukan apa-apa, pakai jalur cadangan (bisa 3-15 detik)...");
     try {
       await client.distube.play(voiceChannel, query, {
         textChannel: interaction.channel,
         member: interaction.member,
       });
-      await interaction.editReply("✅ Diputar lewat jalur cadangan.");
+      await safeEdit(interaction, "✅ Diputar lewat jalur cadangan.");
     } catch (err) {
       console.error("Play/search error:", err);
-      await interaction.editReply(`❌ Gagal memutar: ${safeError(err)}`);
+      await safeEdit(interaction, `❌ Gagal memutar: ${safeError(err)}`);
     }
     return;
   }
 
-  await interaction.editReply(renderPicker(query, results, Date.now() - started));
-  const message = await interaction.fetchReply();
+  await safeEdit(interaction, renderPicker(query, results, Date.now() - started));
+  const message = await interaction.fetchReply().catch(() => null);
+  if (!message) return; // interaksi sudah tidak bisa dipakai — jangan simpan state yatim
   storePicker(client, message, { results, query, requester: interaction.user.id });
   // user masih baca menu (2-5 detik) = waktu gratis buat nge-resolve stream rank 1-3
   prefetchTop(client, results);

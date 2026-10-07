@@ -1,6 +1,6 @@
 const { Song } = require("distube");
 const { json: ytdlpJson } = require("@distube/yt-dlp");
-const { withBudget, itunesSearch, tidalSearch, ytsrSearch, DIRECT_SOURCES } = require("./engines");
+const { withBudget, readJson, itunesSearch, tidalSearch, ytsrSearch, DIRECT_SOURCES } = require("./engines");
 
 const DEEZER_API = "https://api.deezer.com";
 
@@ -50,8 +50,12 @@ function scoreCandidate(song, tokens, weight) {
 }
 
 async function deezerSearch(query, plugin) {
-  const res = await fetch(`${DEEZER_API}/search?q=${encodeURIComponent(query)}&limit=5`);
-  const data = await res.json();
+  // Dulu tanpa AbortSignal & tanpa cek res.ok: kalau Deezer lambat, withBudget sudah
+  // membuang hasilnya tapi fetch-nya terus hidup (log 'deezer > 900ms' berulang + bocor).
+  const res = await fetch(`${DEEZER_API}/search?q=${encodeURIComponent(query)}&limit=5`, {
+    signal: AbortSignal.timeout(2500),
+  });
+  const data = await readJson(res);
   const tracks = (data.data || []).filter((t) => t.readable).slice(0, 5);
   return tracks.map(
     (track) =>
@@ -167,6 +171,8 @@ const SOURCE_WEIGHT = { youtube: 0.6, soundcloud: 0.4, deezer: 0.25, tidal: 0.15
 
 // Batas tiap sumber (ms). Wall-clock total = max dari budget ini, bukan jumlahnya
 // (semua jalan paralel via Promise.all). SoundCloud paling ketat: pernah hang total.
+// Dipakai juga sebagai SKALA saat retry: cap ikut naik sebesar kenaikan budget, kalau
+// tidak, retry hanya mengulang percobaan pertama dengan hasil yang sama.
 const SOURCE_CAP = { youtube: 900, soundcloud: 600, deezer: 900, apple: 900, tidal: 900 };
 
 // Satu lagu dari beberapa sumber → satu baris. Key = judul + artis ternormalisasi
@@ -207,10 +213,14 @@ async function searchAll(query, plugins, { budget = 900, limit = 10 } = {}) {
     { key: "tidal", fn: () => tidalSearch(query, 6) },
   ];
 
-  const fanOut = async (ms) => {
+  // `scale` menaikkan cap per sumber sebanding dengan naiknya budget.
+  // Sebelumnya retry memanggil fanOut(1800) tapi tetap Math.min(1800, cap) → cap (≤900)
+  // selalu menang, jadi percobaan kedua PERSIS sama dengan pertama dan pasti gagal lagi.
+  const fanOut = async (ms, scale = 1) => {
     const settled = await Promise.all(
       jobs.map(async (job) => {
-        const songs = await withBudget(job.fn(), Math.min(ms, SOURCE_CAP[job.key]), job.key);
+        const cap = Math.round(SOURCE_CAP[job.key] * scale);
+        const songs = await withBudget(job.fn(), Math.min(ms, cap), job.key);
         return songs.map((song) => ({
           song,
           score: scoreCandidate(song, tokens, SOURCE_WEIGHT[job.key] || 0),
@@ -225,10 +235,11 @@ async function searchAll(query, plugins, { budget = 900, limit = 10 } = {}) {
 
   let out = await fanOut(budget);
   // Semua mesin kosong (biasanya rate limit, bukan kasus "lagu tidak ada") → coba sekali lagi
-  // dengan budget dobel. Tetap jauh lebih murah daripada langsung jatuh ke yt-dlp (5-15 detik).
+  // dengan budget & cap dobel. Tetap jauh lebih murah daripada jatuh ke yt-dlp (5-15 detik).
   if (!out.flat.length) {
-    console.warn(`[search] semua mesin kosong, retry budget ${Math.min(budget * 2, 3000)}ms`);
-    out = await fanOut(Math.min(budget * 2, 3000));
+    const retryMs = Math.min(budget * 2, 3000);
+    console.warn(`[search] semua mesin kosong, retry budget ${retryMs}ms (cap x2)`);
+    out = await fanOut(retryMs, retryMs / budget);
   }
 
   return { results: dedupe(out.flat).slice(0, limit), ytOk: out.ytOk };

@@ -90,7 +90,7 @@ spotify.js          parse & resolve link Spotify (tanpa API premium)
 deezer.js           modul Deezer public API (opsional, tidak dipakai flow saat ini)
 theme.js            format embed, durasi, volume bar
 scripts/patch-ytdlp.js  patch kompatibilitas yt-dlp (dijalankan via postinstall)
-test/               picker-check.js, cache-check.js, autoplay-check.js (unit, offline)
+test/               crash-check.js, picker-check.js, cache-check.js, autoplay-check.js (unit, offline)
                     engines-live.js, search-all-live.js, live-e2e.js (harness live)
 ```
 
@@ -122,7 +122,8 @@ YtDlpPlugin.prototype.getRelatedSongs = getRelatedSongs;
 
 ```bash
 # offline, tanpa Discord & tanpa internet
-node test/picker-check.js    # 18 assertion: dedupe, picker UI, handler tombol, /play & /search
+node test/crash-check.js     # 6 assertion: jalur error yang dulu mematikan bot + retry pencarian
+node test/picker-check.js    # 19 assertion: dedupe, picker UI, handler tombol, /play & /search
 node test/cache-check.js     # 4 assertion: cache query yt-dlp
 node test/autoplay-check.js  # 5 assertion: mesin autoplay
 
