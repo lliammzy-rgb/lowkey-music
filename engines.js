@@ -8,16 +8,18 @@ const ytsr = require("@distube/ytsr");
 
 const ITUNES_API = "https://itunes.apple.com/search";
 const TIDAL_API = "https://api.tidal.com/v1/search/tracks";
+const DEEZER_API = "https://api.deezer.com/search";
 // token yang dipakai web player Tidal (listen.tidal.com). Kalau Tidal rotasi → 401 →
 // sumber ini hilang sendiri, sisanya tetap jalan. Bisa dioverride lewat env.
 const TIDAL_TOKEN = process.env.TIDAL_TOKEN || "CzET4vdadNUFQ5JU";
 
+// Label sumber. Tanpa emoji: teks saja supaya tidak bergantung pada font emoji klien.
 const SOURCE_META = {
-  youtube: { emoji: "▶️", label: "YouTube" },
-  soundcloud: { emoji: "🟠", label: "SoundCloud" },
-  deezer: { emoji: "🟣", label: "Deezer" },
-  apple: { emoji: "🍎", label: "Apple Music" },
-  tidal: { emoji: "🌊", label: "Tidal" },
+  youtube: { label: "YouTube" },
+  soundcloud: { label: "SoundCloud" },
+  deezer: { label: "Deezer" },
+  apple: { label: "Apple Music" },
+  tidal: { label: "Tidal" },
 };
 
 // Sumber yang bisa diputar langsung oleh plugin-nya (tanpa mirror YouTube).
@@ -83,6 +85,36 @@ async function itunesSearch(query, limit = 6) {
     );
 }
 
+// Deezer: mesin paling cepat dan paling stabil dari semua kandidat yang diuji
+// (378-2486ms, tidak pernah balas error). Dulu hidup di search.js; dipindah ke sini supaya
+// semua mesin ada di satu tempat dan bisa dipakai autocomplete juga.
+async function deezerSearch(query, limit = 5) {
+  const data = await readJson(
+    await fetch(`${DEEZER_API}?q=${encodeURIComponent(query)}&limit=${limit}`, {
+      signal: AbortSignal.timeout(2500),
+    }),
+  );
+  return (data.data || [])
+    .filter((t) => t.readable && t.id && t.title)
+    .slice(0, limit)
+    .map(
+      (t) =>
+        new Song(
+          {
+            source: "deezer",
+            playFromSource: false,
+            id: String(t.id),
+            url: t.link,
+            name: t.title,
+            uploader: { name: t.artist?.name },
+            duration: t.duration || 0,
+            thumbnail: t.album?.cover_xl || t.album?.cover_big || t.album?.cover_medium || t.album?.cover,
+          },
+          {},
+        ),
+    );
+}
+
 async function tidalSearch(query, limit = 6) {
   const url = `${TIDAL_API}?query=${encodeURIComponent(query)}&limit=${limit}&countryCode=US`;
   const data = await readJson(
@@ -135,6 +167,7 @@ module.exports = {
   withBudget,
   readJson,
   itunesSearch,
+  deezerSearch,
   tidalSearch,
   ytsrSearch,
   toSeconds,

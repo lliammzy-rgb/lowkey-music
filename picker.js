@@ -33,23 +33,26 @@ function formatDur(sec) {
   return `${m}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 }
 
-const badge = (song) => SOURCE_META[song.source] || { emoji: "🎵", label: song.source };
+const badge = (song) => SOURCE_META[song.source] || { label: song.source };
 const embed = (description) => new EmbedBuilder().setColor(color).setDescription(description);
+
+// Tanpa emoji: "langsung" bisa diputar apa adanya, "mirror" dicarikan padanan di YouTube.
+const KIND_TAG = { direct: "[langsung]", mirror: "[mirror]" };
 
 function renderPicker(query, results, elapsed) {
   const list = results
     .map((r, i) => {
       const s = r.song;
       const b = badge(s);
-      const mark = r.kind === "direct" ? "⚡" : "🔁"; // ⚡ = bisa langsung bunyi, 🔁 = mirror ke YouTube
-      return `\`${i + 1}.\` ${mark} [${trunc(s.name, 55) || "Tanpa judul"}](${s.url})\n   ${trunc(s.uploader?.name ?? "?", 32)} • ${formatDur(s.duration)} • ${b.emoji} ${b.label}`;
+      const tag = KIND_TAG[r.kind] || KIND_TAG.mirror;
+      return `\`${i + 1}.\` ${tag} [${trunc(s.name, 55) || "Tanpa judul"}](${s.url})\n   ${trunc(s.uploader?.name ?? "?", 32)} • ${formatDur(s.duration)} • ${b.label}`;
     })
     .join("\n");
 
   const sources = [...new Set(results.map((r) => badge(r.song).label))];
   const view = new EmbedBuilder()
     .setColor(color)
-    .setTitle(trunc(`🔎 ${query}`, 256))
+    .setTitle(trunc(`Cari: ${query}`, 256))
     .setDescription(list || "Tidak ada hasil.")
     .setFooter({
       text: `${results.length} hasil • ${sources.join(" • ")}${elapsed ? ` • ${elapsed}ms` : ""}`,
@@ -61,7 +64,7 @@ function renderPicker(query, results, elapsed) {
   const menu = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`${PREFIX}play`)
-      .setPlaceholder("🎵 Pilih lagu untuk diputar")
+      .setPlaceholder("Pilih lagu untuk diputar")
       .addOptions(
         results.map((r, i) => ({
           label: trunc(`${i + 1}. ${r.song.name || "Tanpa judul"}`, 100),
@@ -72,9 +75,9 @@ function renderPicker(query, results, elapsed) {
   );
 
   const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${PREFIX}quick`).setLabel("Main #1").setEmoji("⚡").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`${PREFIX}rand`).setLabel("Acak").setEmoji("🎲").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`${PREFIX}cancel`).setLabel("Batal").setEmoji("✖").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`${PREFIX}quick`).setLabel("Main #1").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`${PREFIX}rand`).setLabel("Acak").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`${PREFIX}cancel`).setLabel("Batal").setStyle(ButtonStyle.Danger),
   );
 
   return { embeds: [view], components: [menu, buttons] };
@@ -87,7 +90,7 @@ function storePicker(client, message, data) {
   pickers.set(message.id, { ...data, message, at: Date.now() });
   const timer = setTimeout(() => {
     if (!pickers.delete(message.id)) return; // sudah dipakai/bersih
-    message.edit({ embeds: [embed("⌛ Menu pencarian kadaluwarsa. Ulangi `/play` ya.")], components: [] }).catch(() => {});
+    message.edit({ embeds: [embed("Menu pencarian kadaluwarsa. Ulangi `/play` ya.")], components: [] }).catch(() => {});
   }, PICKER_TTL);
   timer.unref?.();
   return message;
@@ -166,7 +169,7 @@ async function handlePick(interaction, client) {
   const state = pickers.get(interaction.message.id);
   if (!state) {
     return interaction.reply({
-      content: "⌛ Menu ini sudah kadaluwarsa. Ulangi `/play`.",
+      content: "Menu ini sudah kadaluwarsa. Ulangi `/play`.",
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -178,7 +181,7 @@ async function handlePick(interaction, client) {
       return interaction.reply({ content: "Cuma yang minta yang bisa batalin.", flags: MessageFlags.Ephemeral });
     }
     pickers.delete(interaction.message.id);
-    return interaction.update({ embeds: [embed(`✖ Dibatalkan.`)], components: [] });
+    return interaction.update({ embeds: [embed("Dibatalkan.")], components: [] });
   }
 
   // index: "play" = nilai dari menu, "rand" = acak, selainnya ("quick") = nomor 1
@@ -194,7 +197,7 @@ async function handlePick(interaction, client) {
   const voiceChannel = interaction.member?.voice?.channel;
   if (!voiceChannel) {
     // jangan hapus menu: user cukup join VC lalu klik lagi
-    return interaction.reply({ content: "🚪 Masuk voice channel dulu, baru pilih.", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: "Masuk voice channel dulu, baru pilih.", flags: MessageFlags.Ephemeral });
   }
   const botVoice = client.distube.voices.get(interaction.guildId);
   if (botVoice?.channel && botVoice.channel.id !== voiceChannel.id) {
@@ -208,7 +211,7 @@ async function handlePick(interaction, client) {
 
   try {
     await interaction.deferUpdate();
-    await interaction.editReply({ embeds: [embed(`⏳ Menyiapkan **${trunc(picked.song.name, 200)}**…`)], components: [] });
+    await interaction.editReply({ embeds: [embed(`Menyiapkan **${trunc(picked.song.name, 200)}**...`)], components: [] });
     const song = await resolvePlayable(picked);
     if (!song?.url) throw new Error("tidak nemu sumber yang bisa diputar");
     await warmStream(client, song); // cache prefetch → lewati resolve yt-dlp DisTube
@@ -217,11 +220,11 @@ async function handlePick(interaction, client) {
       member: interaction.member,
     });
     await interaction
-      .editReply({ embeds: [embed(`▶️ Masuk antrian: [${trunc(song.name, 200)}](${song.url})`)] })
+      .editReply({ embeds: [embed(`Masuk antrian: [${trunc(song.name, 200)}](${song.url})`)] })
       .catch(() => {});
   } catch (err) {
     console.error("[picker]", err);
-    const msg = { embeds: [embed(`❌ Gagal: \`${safeError(err, 180)}\``)] };
+    const msg = { embeds: [embed(`Gagal: \`${safeError(err, 180)}\``)] };
     // kalau deferUpdate sendiri yang gagal, kita belum bisa editReply → pakai reply biasa
     if (interaction.deferred || interaction.replied) await interaction.editReply(msg).catch(() => {});
     else await interaction.reply({ ...msg, flags: MessageFlags.Ephemeral }).catch(() => {});
@@ -240,18 +243,18 @@ async function handleControl(interaction, client) {
   let text;
   if (customId === "np_skip" || customId === "skip_again") {
     const song = await queue.skip().catch(() => null);
-    text = song ? `⏭️ Skip. Sekarang: [${trunc(song.name, 150)}](${song.url})` : "⏭️ Skip. Antrian habis.";
+    text = song ? `Skip. Sekarang: [${trunc(song.name, 150)}](${song.url})` : "Skip. Antrian habis.";
   } else if (customId === "np_pause" || customId === "toggle_pause") {
     // DisTube v5 tidak punya togglePause() — cuma pause()/resume()
     if (queue.paused) queue.resume();
     else queue.pause();
-    text = queue.paused ? "⏸️ Dijeda." : "▶️ Dilanjutkan.";
+    text = queue.paused ? "Dijeda." : "Dilanjutkan.";
   } else if (customId === "np_autoplay") {
     const map = client.distubeAutoplay || (client.distubeAutoplay = new Map());
     const on = !map.get(interaction.guildId);
     map.set(interaction.guildId, on);
     queue.autoplay = on;
-    text = `🤖 Autoplay ${on ? "aktif" : "mati"}.`;
+    text = `Autoplay ${on ? "aktif" : "mati"}.`;
   } else {
     return interaction.reply({ content: "Tombol tidak dikenal.", flags: MessageFlags.Ephemeral });
   }

@@ -37,7 +37,7 @@ Lowkey Music - Discord music bot supporting YouTube, Spotify, SoundCloud, Deezer
 - **Text-only embeds**: Semua command menggunakan `content` bukan `embeds`, hanya teks murni
 - **Volume bar text**: `generateVolumeBar()` menghasilkan bar karakter seperti `████░░ 70%`
 - **Now playing embed**: `statusEmbed()` sekarang menggunakan `miniNowPlayingFields` dengan fields terstruktur: Judul, Artis, Durasi, Volume, Loop, Antrian
-- **Minimal emoji**: Hanya digunakan untuk status: `▶️`, `⏸️`, `⏹️`, `⏭️`, `🤖`, `✨`, `🔊`
+- **Tanpa emoji**: seluruh output teks saja (status ditulis sebagai teks, mis. `Dijeda.`, `Skip. Sekarang: ...`)
 - **No complex embeds**: Semua reply menggunakan `content` dengan `flags: Ephemeral`
 
 ### New Delete Track Features
@@ -62,15 +62,15 @@ Lowkey Music - Discord music bot supporting YouTube, Spotify, SoundCloud, Deezer
 
 ### Core Commands (Text-Only, 1-12)
 1. `/play` - Play song (auto-search best version) - reply via `content`
-2. `/pause` - Pause song - `⏸️ Dijeda.`
-3. `/resume` - Resume song - `▶️ Dilanjutkan.`
-4. `/skip` - Skip to next song - `⏭️ Skip. Sekarang: [judul]`
-5. `/stop` - Stop and clear queue - `⏹️ Stop. Antrian dibersihkan. Bot diam 5 menit sebelum keluar.`
+2. `/pause` - Pause song - `Lagu dijeda.`
+3. `/resume` - Resume song - `Dilanjutkan.`
+4. `/skip` - Skip to next song - `Skip. Sekarang: [judul]`
+5. `/stop` - Stop and clear queue - `Stop. Antrian dibersihkan. Bot diam 5 menit sebelum keluar.`
 6. `/queue` - View queue (up to 11 songs) - Embed dengan title/description
 7. `/nowplaying` - Now playing embed - pakai `statusEmbed()` dari theme.js
 8. `/loop` - Set loop mode - `Loop: off/song/queue`
-9. `/volume` - Set volume 0-100 - `🔊 Volume: ████░░ 70%` (text bar!)
-10. `/shuffle` - Shuffle queue - `✨ Antrian diacak.`
+9. `/volume` - Set volume 0-100 - `Volume: ████░░ 70%` (text bar!)
+10. `/shuffle` - Shuffle queue - `Antrian diacak.`
 11. `/join` - Join user's voice channel - reply via `content`
 12. `/leave` - Leave voice channel - `Keluar. Sampai jumpa!`
 

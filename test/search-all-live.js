@@ -12,7 +12,7 @@ const QUERY = process.argv[2] || "imagine john lennon";
     console.log(`\n===== run ${run}: ${results.length} hasil dalam ${Date.now() - t}ms (ytOk=${ytOk}) =====`);
     results.forEach((r, i) => {
       console.log(
-        `${String(i + 1).padStart(2)}. [${r.kind === "direct" ? "⚡" : "🔁"}] ${r.song.source.padEnd(11)} ` +
+        `${String(i + 1).padStart(2)}. [${r.kind === "direct" ? "langsung" : "mirror "}] ${r.song.source.padEnd(11)} ` +
           `score=${r.score.toFixed(2).padStart(6)} ${formatDur(r.song.duration).padStart(5)}  ` +
           `${(r.song.name || "").slice(0, 52)} — ${r.song.uploader?.name || "?"}`,
       );

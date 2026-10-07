@@ -1,8 +1,14 @@
 const { Song } = require("distube");
 const { json: ytdlpJson } = require("@distube/yt-dlp");
-const { withBudget, readJson, itunesSearch, tidalSearch, ytsrSearch, DIRECT_SOURCES } = require("./engines");
-
-const DEEZER_API = "https://api.deezer.com";
+const {
+  withBudget,
+  readJson,
+  itunesSearch,
+  deezerSearch,
+  tidalSearch,
+  ytsrSearch,
+  DIRECT_SOURCES,
+} = require("./engines");
 
 // Normalisasi: lowercase, buang (Official Video) [MV] feat. dll
 // DISUPAYA: jangan buang artis name karena krusial untuk matching underated songs
@@ -47,33 +53,6 @@ function scoreCandidate(song, tokens, weight) {
   if (dur >= 60 && dur <= 600) score += 1;
   else if (dur > 0) score -= 1;  // Kurangi penalty jadi -1 daripada -3
   return score + weight;
-}
-
-async function deezerSearch(query, plugin) {
-  // Dulu tanpa AbortSignal & tanpa cek res.ok: kalau Deezer lambat, withBudget sudah
-  // membuang hasilnya tapi fetch-nya terus hidup (log 'deezer > 900ms' berulang + bocor).
-  const res = await fetch(`${DEEZER_API}/search?q=${encodeURIComponent(query)}&limit=5`, {
-    signal: AbortSignal.timeout(2500),
-  });
-  const data = await readJson(res);
-  const tracks = (data.data || []).filter((t) => t.readable).slice(0, 5);
-  return tracks.map(
-    (track) =>
-      new Song(
-        {
-          plugin,
-          source: "deezer",
-          playFromSource: false,
-          id: String(track.id),
-          url: track.link,
-          name: track.title,
-          uploader: { name: track.artist.name },
-          duration: track.duration || 0,
-          thumbnail: track.album.cover_xl || track.album.cover_big || track.album.cover_medium || track.album.cover,
-        },
-        {},
-      ),
-  );
 }
 
 // cache data mentah hasil yt-dlp search, TTL 30 detik — query sama berulang jadi instan
@@ -134,7 +113,7 @@ async function autoSearch(query, plugins) {
     try {
       const songs =
         source === "deezer"
-          ? await deezerSearch(query, plugins.deezer)
+          ? await deezerSearch(query)
           : source === "youtube"
             ? await youtubeSearch(query)
             : await soundcloudSearch(query, plugins.soundcloud);
@@ -208,7 +187,7 @@ async function searchAll(query, plugins, { budget = 900, limit = 10 } = {}) {
   const jobs = [
     { key: "youtube", fn: () => ytsrSearch(query, 6) },
     { key: "soundcloud", fn: () => soundcloudSearch(query, plugins?.soundcloud) },
-    { key: "deezer", fn: () => deezerSearch(query, plugins?.deezer) },
+    { key: "deezer", fn: () => deezerSearch(query, 6) },
     { key: "apple", fn: () => itunesSearch(query, 6) },
     { key: "tidal", fn: () => tidalSearch(query, 6) },
   ];

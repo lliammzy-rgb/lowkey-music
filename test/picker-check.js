@@ -253,6 +253,22 @@ const mk = (source, name, artist, score) => ({
   const btnIds = view.components[1].components.map((b) => b.data.custom_id);
   assert.deepStrictEqual(btnIds, [`${PREFIX}quick`, `${PREFIX}rand`, `${PREFIX}cancel`]);
 
+  // 5b. Tanpa emoji: judul, placeholder, daftar, dan label tombol harus bersih dari emoji.
+  // Dikunci di tes supaya tidak diam-diam masuk lagi. (•, —, …, → bukan emoji → boleh.)
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{20E3}\u{2300}-\u{23FF}]/u;
+  const surfaces = [
+    view.embeds[0].data.title,
+    view.embeds[0].data.description,
+    menu.data.placeholder,
+    ...menu.options.map((o) => o.data.label),
+    ...menu.options.map((o) => o.data.description),
+    ...view.components[1].components.map((b) => b.data.label || ""),
+  ];
+  for (const s of surfaces) {
+    assert.ok(!EMOJI.test(s || ""), `teks picker tidak boleh ada emoji: ${s}`);
+    for (const b of view.components[1].components) assert.ok(!b.data.emoji, "tombol tidak boleh punya emoji");
+  }
+
   // 6. storePicker: state per message id, sekali pakai, dan TIDAK menyimpan apa pun dari user
   const client = {};
   const fakeMsg = { id: "msg1", edit: async () => {} };
@@ -275,13 +291,15 @@ const mk = (source, name, artist, score) => ({
   assert.strictEqual(formatDur(0), "?:??");
   assert.strictEqual(formatDur(185), "3:05");
   assert.strictEqual(formatDur(59), "0:59");
+  // Tanpa emoji: cuma `label`. Kalau ada yang balik nambah `emoji`, itu regresi.
   for (const s of ["youtube", "soundcloud", "deezer", "apple", "tidal"]) {
-    assert.ok(SOURCE_META[s]?.emoji && SOURCE_META[s]?.label, `label sumber ${s} harus ada`);
+    assert.ok(SOURCE_META[s]?.label, `label sumber ${s} harus ada`);
+    assert.ok(!("emoji" in SOURCE_META[s]), `sumber ${s} tidak boleh punya emoji lagi`);
   }
   assert.ok(DIRECT_SOURCES.has("youtube") && DIRECT_SOURCES.has("soundcloud"), "youtube & soundcloud = direct");
   assert.ok(!DIRECT_SOURCES.has("deezer"), "deezer bukan direct (InfoExtractorPlugin)");
 
-  // 9. handlePick: tombol ⚡ → defer, main, state sekali pakai
+  // 9. handlePick: tombol "Main #1" → defer, main, state sekali pakai
   const c1 = fakeClient();
   c1.pickers.set("msg1", direct());
   const p1 = fakeInteraction();
@@ -364,7 +382,7 @@ const mk = (source, name, artist, score) => ({
   const cs = fakeClient(q);
   const ps = fakeInteraction({ customId: "np_skip" });
   await handleControl(ps.it, cs);
-  assert.match(ps.calls.reply[0].content, /⏭️/);
+  assert.match(ps.calls.reply[0].content, /Skip/i);
 
   const pa = fakeInteraction({ customId: "np_autoplay" });
   await handleControl(pa.it, fakeClient(q));

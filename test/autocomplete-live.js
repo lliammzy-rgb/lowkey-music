@@ -1,4 +1,4 @@
-// Probe live autocomplete: ukur latency nyata ytsr + iTunes untuk saran.
+// Probe live autocomplete: ukur latency nyata iTunes + Deezer untuk saran.
 // `node test/autocomplete-live.js "imagine john lennon"` — butuh internet, tanpa Discord.
 const { autocompleteSearch, renderChoices, parseChoice } = require("../autocomplete");
 
@@ -11,20 +11,19 @@ const client = { autoPicks: new Map() };
     (s, i, a) => s.length >= 3 && a.indexOf(s) === i,
   );
 
-  let prev = 0;
   for (const step of steps) {
     const t = Date.now();
     const res = await autocompleteSearch(step, {}, { limit: 25 });
     const ms = Date.now() - t;
     const choices = renderChoices(res, client);
     const back = choices[0] ? parseChoice(choices[0].value, client) : null;
+    const sources = [...new Set(res.map((c) => c.song.source))].join("+") || "-";
     console.log(
-      `[ac] "${step}" → ${ms}ms — ${res.length} saran${ms <= 2500 ? "" : "  ⚠️ LEWAT 3 DETIK"}` +
+      `[ac] "${step}" → ${ms}ms — ${res.length} saran [${sources}]${ms <= 2500 ? "" : "  LEWAT 3 DETIK"}` +
         (back?.song ? ` — pilih#1 = ${back.song.source}:${back.song.id}` : ""),
     );
     for (const c of choices.slice(0, 5)) console.log(`     ${c.name}`);
-    if (choices.length > 5) console.log(`     … +${choices.length - 5} lagi`);
-    prev = ms;
+    if (choices.length > 5) console.log(`     ... +${choices.length - 5} lagi`);
   }
 
   // Panggilan ulang query identik → harus dari cache (instan)

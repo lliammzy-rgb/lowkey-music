@@ -16,7 +16,7 @@ Bot musik Discord, 100% gratis. Sumber: **YouTube**, **Spotify**, **SoundCloud**
 1. Buka **https://discord.com/developers/applications**
 2. **New Application** → kasih nama (misal: `Lowkey Music`) → **Create**
 3. Tab **Bot**:
-   - Klik **Reset Token** → copy token. ⚠️ **Jangan dibagikan ke siapa pun!**
+   - Klik **Reset Token** → copy token. **Jangan dibagikan ke siapa pun!**
 4. Tab **General Information**: copy **Application ID** (ini `DISCORD_CLIENT_ID`)
 5. Undang bot:
    - Tab **Installation** (atau **OAuth2 → URL Generator**)
@@ -126,4 +126,4 @@ A: Ya. discord.js, DisTube, semua plugin, API Spotify, dan hosting Wispbyte grat
 **Q: Kenapa lagu Spotify diputar lewat YouTube?**
 A: Spotify tidak mengizinkan streaming langsung ke bot (DMCA). Cara standar semua bot musik: ambil metadata lagu Spotify → cari di YouTube → stream dari YouTube. Suara sama persis.
 
-Selamat menikmati Lowkey Music! 🎵
+Selamat menikmati Lowkey Music!

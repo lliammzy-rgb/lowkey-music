@@ -7,6 +7,8 @@
 //  3. token kadaluarsa → masih bisa jadi query, bukan query sampah
 //  4. user yang mengetik manual TIDAK dianggap memilih saran
 //  5. dedupe: satu lagu muncul berkali-kali dari iTunes → satu saran
+//  5d. Deezer ikut jadi sumber saran, dan hasilnya bertanda mirror
+//  5e. lagu sama dari Apple + Deezer → satu saran (dedupe lintas sumber)
 //  6. query identik & ketikan cepat tidak menembak jaringan berkali-kali
 //  7. jumlah saran tidak pernah lebih dari 25 & name/value ≤ 100 char (batas Discord)
 //  8. /play dengan value saran memutar TANPA searchAll & tanpa picker (jalur pintas)
@@ -65,11 +67,17 @@ req.cache[req.resolve("@distube/ytsr")] = {
 const json = (body) => ({ ok: true, status: 200, json: async () => body });
 let itunesCalls = 0;
 let itunesItems = [];
+let deezerCalls = 0;
+let deezerItems = [];
 global.fetch = async (url) => {
   const u = String(url);
   if (u.includes("itunes.apple.com")) {
     itunesCalls++;
     return json({ results: itunesItems });
+  }
+  if (u.includes("api.deezer.com")) {
+    deezerCalls++;
+    return json({ data: deezerItems });
   }
   return json({});
 };
@@ -87,6 +95,15 @@ const appleItem = (id, name, artist) => ({
   artistName: artist,
   trackViewUrl: `https://music.apple.com/${id}`,
   trackTimeMillis: 185000,
+});
+const deezerItem = (id, title, artist) => ({
+  id,
+  title,
+  readable: true,
+  link: `https://www.deezer.com/track/${id}`,
+  duration: 185,
+  artist: { name: artist },
+  album: { cover_xl: `https://cdn.deezer.com/${id}.jpg` },
 });
 const mkSong = (o) => new Song(o);
 
@@ -162,6 +179,52 @@ const mkSong = (o) => new Song(o);
   ];
   const collapsed = await autocompleteSearch("imagine john lennon", plugins);
   assert.strictEqual(collapsed.length, 1, "versi lain dari lagu yang sama tidak boleh memenuhi daftar");
+
+  // 5d. Deezer ikut jadi sumber saran, dan hasilnya bertanda mirror (tidak punya plugin stream).
+  ac._reset();
+  itunesItems = [];
+  deezerItems = [deezerItem(555, "Bohemian Rhapsody", "Queen")];
+  const fromDeezer = await autocompleteSearch("bohemian rhapsody queen", plugins);
+  assert.ok(deezerCalls > 0, "Deezer harus ikut dipanggil (bukan cuma iTunes)");
+  assert.strictEqual(fromDeezer.length, 1, "saran dari Deezer harus muncul");
+  assert.strictEqual(fromDeezer[0].song.source, "deezer");
+  assert.strictEqual(fromDeezer[0].song.uploader.name, "Queen");
+  assert.strictEqual(fromDeezer[0].kind, "mirror", "Deezer = mirror (InfoExtractorPlugin, tanpa stream)");
+
+  // 5e. lagu sama dari Apple + Deezer → SATU saran, bukan dua baris kembar
+  ac._reset();
+  itunesItems = [appleItem(1, "Bohemian Rhapsody", "Queen")];
+  deezerItems = [deezerItem(555, "Bohemian Rhapsody", "Queen")];
+  const merged = await autocompleteSearch("bohemian rhapsody queen", plugins);
+  assert.strictEqual(merged.length, 1, "lagu sama dari Apple & Deezer harus jadi satu saran");
+  assert.ok(itunesCalls > 0 && deezerCalls > 0, "keduanya tetap harus dicoba");
+
+  // 5f. iTunes yang menang → Deezer tidak boleh menurunkan posisi (keduanya mirror, urutan tetap)
+  assert.strictEqual(merged[0].kind, "mirror");
+  assert.strictEqual(merged[0].song.source, "apple", "skor sama → entri pertama (iTunes) dipertahankan");
+
+  // 5g. tanpa emoji di baris saran (sebagian klien tidak punya glyph-nya)
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{20E3}\u{2300}-\u{23FF}]/u;
+  for (const c of renderChoices(fromDeezer, client)) {
+    assert.ok(!EMOJI.test(c.name), `saran tidak boleh ada emoji: ${c.name}`);
+  }
+
+  // 5h. REGRESI peringkat: artis yang namanya = SELURUH query tidak boleh menang atas lagu
+  //     yang judulnya benar-benar cocok. Nyata: query "bohemian rhapsody" pernah balik
+  //     "Don't Stop Me Now" oleh artis bernama "Bohemian Rhapsody" di posisi #1.
+  ac._reset();
+  itunesItems = [appleItem(1, "Don't Stop Me Now", "Bohemian Rhapsody")];
+  deezerItems = [deezerItem(2, "Bohemian Rhapsody", "Queen")];
+  const coverTrap = await autocompleteSearch("bohemian rhapsody", plugins);
+  assert.strictEqual(coverTrap[0].song.uploader.name, "Queen", `#1 harus Queen, dapat ${coverTrap[0].song.uploader.name}`);
+  assert.strictEqual(coverTrap[0].song.name, "Bohemian Rhapsody");
+
+  // 5i. tapi artis yang cocok memang boleh menang: query "imagine john lennon" → John Lennon
+  ac._reset();
+  itunesItems = [appleItem(1, "Imagine (John Lennon)", "Tackie & G. Ferreila"), appleItem(2, "Imagine", "John Lennon")];
+  deezerItems = [];
+  const artistWins = await autocompleteSearch("imagine john lennon", plugins);
+  assert.strictEqual(artistWins[0].song.uploader.name, "John Lennon", "artis yang cocok harus tetap menang");
 
   // 6. query identik dua kali → jaringan cuma sekali
   ac._reset();
@@ -293,7 +356,7 @@ const mkSong = (o) => new Song(o);
   await handler({ ...autoIt, commandName: "boom" });
   assert.deepStrictEqual(responded, [], "autocomplete yang error harus tetap dijawab kosong");
 
-  console.log("✅ autocomplete-check: 9/9 lulus");
+  console.log("✅ autocomplete-check: lulus");
   process.exit(0);
 })().catch((e) => {
   console.error("❌ autocomplete-check GAGAL:", e.message);

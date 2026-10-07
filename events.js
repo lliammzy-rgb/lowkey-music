@@ -22,8 +22,8 @@ function registerEvents(client) {
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
-    // 0️⃣ Autocomplete (/play saat user masih mengetik). WAJIB di paling atas: interaksi
-    // ini bukan chat input command, jadi tanpa cabang ini Discord tidak dapat balasan dan
+    // Autocomplete (/play saat user masih mengetik). WAJIB di paling atas: interaksi ini
+    // bukan chat input command, jadi tanpa cabang ini Discord tidak dapat balasan dan
     // dropdown user menggantung sampai error. Deadline-nya cuma 3 detik.
     if (interaction.isAutocomplete?.()) {
       const command = client.commands.get(interaction.commandName);
@@ -37,8 +37,8 @@ function registerEvents(client) {
       }
     }
 
-    // 1️⃣ Komponen (select menu + tombol). Tanpa baris ini SEMUA tombol mati: tidak ada
-    // yang menangkap isStringSelectMenu()/isButton(), jadi Discord diam-diam menjatuhkan.
+    // Komponen (select menu + tombol). Tanpa baris ini SEMUA tombol mati: tidak ada yang
+    // menangkap isStringSelectMenu()/isButton(), jadi Discord diam-diam menjatuhkan.
     if (interaction.isStringSelectMenu?.() || interaction.isButton?.()) {
       try {
         if (interaction.customId.startsWith(PICK_PREFIX)) return await handlePick(interaction, client);
@@ -68,7 +68,7 @@ function registerEvents(client) {
     }
   });
 
-  // Status di bawah nama voice channel: "♬ Judul - Artis"
+  // Status di bawah nama voice channel: "Judul - Artis"
   // Endpoint resmi: PUT /channels/{id}/voice-status (belum ada wrapper di discord.js 14)
   // Butuh permission SET_VOICE_CHANNEL_STATUS di role bot
   function setVoiceStatus(queue, text) {
@@ -96,14 +96,14 @@ function registerEvents(client) {
     // PENTING: Queue DisTube v5 TIDAK punya `.guildId` — id queue = guild id (`.id`)
     queue.autoplay = Boolean(client.distubeAutoplay?.get(queue.id));
 
-    setVoiceStatus(queue, `♬ ${song.name} - ${song.uploader?.name ?? "unknown"}`);
+    setVoiceStatus(queue, `${song.name} - ${song.uploader?.name ?? "unknown"}`);
 
     // Lagu yang "diminta" bot = hasil autoplay → embed beda dari request user
     const isAutoplay = queue.autoplay && song.member?.id === client.user.id;
     const embed = isAutoplay
       ? new EmbedBuilder()
           .setColor(color)
-          .setDescription(`🤖 **Autoplay**: [${song.name}](${song.url}) \`${song.formattedDuration}\``)
+          .setDescription(`**Autoplay**: [${song.name}](${song.url}) \`${song.formattedDuration}\``)
       : statusEmbed(queue, song);
     queue.textChannel?.send({ embeds: [embed] }).catch(() => {});
   });
@@ -139,7 +139,7 @@ function registerEvents(client) {
         embeds: [
           new EmbedBuilder()
             .setColor(color)
-            .setDescription("🤖 Autoplay aktif, tapi tidak menemukan lagu terkait. Coba `/play` lagu lain."),
+            .setDescription("Autoplay aktif, tapi tidak menemukan lagu terkait. Coba `/play` lagu lain."),
         ],
       })
       .catch(() => {});

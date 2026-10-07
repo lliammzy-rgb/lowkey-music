@@ -52,9 +52,9 @@ class SkipNetwork extends Error {}
   let playedAt = null;
   distube.on("playSong", (q, song) => {
     playedAt = Date.now();
-    say(`  ▶️ playSong: ${song.name} (${song.uploader?.name})`);
+    say(`  playSong: ${song.name} (${song.uploader?.name})`);
   });
-  distube.on("error", (e) => say("  ❌ distube error:", String(e?.message).slice(0, 140)));
+  distube.on("error", (e) => say("  distube error:", String(e?.message).slice(0, 140)));
 
   await client.login(process.env.DISCORD_TOKEN);
   say(`bot online: ${client.user.tag}, guild ${client.guilds.cache.size}`);
@@ -174,7 +174,7 @@ class SkipNetwork extends Error {}
   process.exit(0);
 })().catch((e) => {
   if (e instanceof SkipNetwork) {
-    console.warn(`[e2e] ⚠️ LEWAT: ${e.message}`);
+    console.warn(`[e2e] LEWAT: ${e.message}`);
     process.exit(0);
   }
   console.error("[e2e] GAGAL:", e.message);

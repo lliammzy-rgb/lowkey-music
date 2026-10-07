@@ -1,8 +1,10 @@
-# Lowkey Music 🎧
+# Lowkey Music
 
 Discord music bot — YouTube, Spotify, SoundCloud, Deezer, Apple Music, Tidal, direct link. Built with [DisTube v5](https://distube.js.org) + discord.js v14.
 
-Fitur unggulan: **picker pencarian multi-sumber** (5 mesin paralel + pilih lagu dari daftar), **autoplay native** (lagu terkait dari artis/genre yang sama), parsing link Spotify tanpa API premium.
+Fitur unggulan: **picker pencarian multi-sumber** (5 mesin paralel + pilih lagu dari daftar), **autocomplete saat mengetik**, **autoplay native** (lagu terkait dari artis/genre yang sama), parsing link Spotify tanpa API premium.
+
+> Tanpa emoji di seluruh output bot. Tanda sumber/tipe ditulis sebagai teks (`[langsung]`, `[mirror]`, `[Deezer]`) supaya tampil sama di semua klien.
 
 ## Commands
 
@@ -28,16 +30,16 @@ Begitu kamu mulai mengetik di option `query` `/play` (minimal 3 huruf), Discord 
 
 Batas 3 detik dari Discord membentuk desainnya:
 
-- Saran dibangun dari **dua mesin tercepat** saja: ytsr (~700ms) + iTunes (~200ms). Kalau kamu tetap menekan enter tanpa memilih, pencarian 5 sumber penuh + picker lama tetap jalan seperti biasa — autocomplete hanya jalan pintas, bukan pengganti.
+- Saran dibangun dari **dua mesin tercepat saja**: iTunes (~200ms–2.3s) + Deezer (~400ms–2.5s), dijalankan **paralel**. ytsr ditolak untuk autocomplete: terukur 1.7–12 detik dan sering balas `Unsupported YouTube Search response`, jadi praktis selalu kalah budget sementara kita tetap membayar tunggunya. Kalau kamu tetap menekan enter tanpa memilih, pencarian 5 sumber penuh + picker tetap jalan seperti biasa — autocomplete hanya jalan pintas, bukan pengganti.
 - `value` tiap saran adalah token pendek (hash `source:id`) + judul. Judulnya ikut dikirim supaya kalau bot restart di antara mengetik dan memilih, lagunya masih bisa dicari ulang — bukan jadi query sampah.
-- Karena autocomplete dipanggil ulang tiap ketikan, ytsr **dijatah 1 request per 1,5 detik**. Ini bukan cuma menghemat: ytsr yang kena rate-limit juga merusak picker, karena mesinnya sama. iTunes tidak dijatah.
-- Hasil query berbeda tidak pernah bocor: dalam jendela jatah, hasil terakhir hanya dipakai ulang kalau query barunya masih sejalur (masih mengetik dari query yang sama).
+- Lagu yang sama dari Apple & Deezer digabung jadi **satu saran** (dedupe lintas sumber), dan versi-versi lain dari lagu yang sama (`Remastered`, `Take 1`, `Live`) diringkas jadi satu wakil — 25 slot dropdown tidak habis untuk satu lagu.
+- Karena autocomplete dipanggil ulang tiap ketikan, hasil query identik dilayani dari cache, dan ketikan cepat digabung (inflight) supaya jaringan tidak ditembak berkali-kali.
 
 ### Menu pilih hasil pencarian
 
-`/play <judul>` (tanpa link) tidak langsung memutar hasil teratas, tapi menampilkan daftar berisi 10 opsi dari 5 sumber: **YouTube, SoundCloud, Deezer, Apple Music, Tidal**. Ada tombol `⚡ Main #1`, `🎲 Acak`, `✖ Batal`, dan kadaluarsa sendiri 60 detik.
+`/play <judul>` (tanpa link) tidak langsung memutar hasil teratas, tapi menampilkan daftar berisi 10 opsi dari 5 sumber: **YouTube, SoundCloud, Deezer, Apple Music, Tidal**. Ada tombol `Main #1`, `Acak`, `Batal`, dan kadaluarsa sendiri 60 detik.
 
-Sumber bertanda `⚡` bisa langsung diputar; `🔁` berarti metadata dari sumber itu lalu di-mirror ke YouTube.
+Baris bertanda `[langsung]` bisa langsung diputar; `[mirror]` berarti metadata dari sumber itu lalu di-mirror ke YouTube.
 
 ## Latensi
 
@@ -46,7 +48,7 @@ Angka terukur (live, `test/live-e2e.js`):
 | Tahap | Waktu |
 |---|---|
 | 5 mesin paralel → picker tampil | **~800–900ms** |
-| Ketik 3 huruf → saran autocomplete muncul | **~200–700ms** (iTunes/ytsr) |
+| Ketik 3 huruf → saran autocomplete muncul | **~300–900ms** (iTunes + Deezer paralel) |
 | Pilih saran → audio bunyi | **~1.2–2.3s** (tanpa searchAll sama sekali) |
 | `getStreamURL` yt-dlp sebelum prefetch | 3.1–5.8s |
 | `getStreamURL` sesudah prefetch (klik rank 1-3) | **0ms** |
@@ -94,7 +96,7 @@ index.js            boot discord.js + DisTube, urutan plugin, patch getStreamURL
 events.js           event DisTube (playSong, addSong, noRelated, dll) + autoplay + router komponen
 commands/music.js   semua slash command (showPicker untuk /play query polos)
 picker.js           menu pilih: render, state per pesan, handler tombol, progressive retry
-autocomplete.js     saran saat mengetik: ytsr+iTunes, jatah ytsr, token → Song
+autocomplete.js     saran saat mengetik: iTunes+Deezer paralel, dedupe lintas sumber, token → Song
 engines.js          5 mesin cari paralel: ytsr, Deezer, SoundCloud, iTunes, Tidal (+ withBudget)
 prefetch.js         cache getStreamURL yt-dlp (TTL 2 menit) + prefetch latar belakang
 ytsearch.js         YtSearchPlugin: search YouTube + getRelatedSongs (mesin autoplay)
@@ -104,7 +106,7 @@ deezer.js           modul Deezer public API (opsional, tidak dipakai flow saat i
 theme.js            format embed, durasi, volume bar
 scripts/patch-ytdlp.js  patch kompatibilitas yt-dlp (dijalankan via postinstall)
 test/               autocomplete-check.js, crash-check.js, picker-check.js, cache-check.js, autoplay-check.js (unit, offline)
-                    engines-live.js, search-all-live.js, live-e2e.js (harness live)
+                    engines-live.js, search-all-live.js, live-e2e.js (harness live), emoji-scan.js (pemeliharaan)
 ```
 
 ### Urutan plugin (penting!)
@@ -129,17 +131,20 @@ YtDlpPlugin.prototype.getRelatedSongs = getRelatedSongs;
 ```
 
 4. `getRelatedSongs` mencari YouTube `"${artist} audio"` (lagu sezaman sesamanya), fallback `"${title} ${artist}"`, buang live/durasi >20 mnt, dedup URL.
-5. Lagu hasil autoplay tampil dengan embed `🤖 Autoplay: ...` (pembeda dari request user).
+5. Lagu hasil autoplay tampil dengan embed `Autoplay: ...` (pembeda dari request user).
 
 ## Testing
 
 ```bash
 # offline, tanpa Discord & tanpa internet
-node test/autocomplete-check.js  # 9 assertion: saran saat mengetik, jatah ytsr, token → Song, jalur pintas
+node test/autocomplete-check.js  # saran saat mengetik (iTunes+Deezer), dedupe lintas sumber, token → Song, jalur pintas
 node test/crash-check.js     # 6 assertion: jalur error yang dulu mematikan bot + retry pencarian
-node test/picker-check.js    # 19 assertion: dedupe, picker UI, handler tombol, /play
+node test/picker-check.js    # 19 assertion: dedupe, picker UI (bebas emoji), handler tombol, /play
 node test/cache-check.js     # 4 assertion: cache query yt-dlp
 node test/autoplay-check.js  # 5 assertion: mesin autoplay
+
+# pemeliharaan
+node test/emoji-scan.js      # pastikan tidak ada emoji yang lolos masuk lagi ke kode
 
 # live, butuh internet (+ .env untuk yang e2e)
 node test/engines-live.js        # bentuk data + latency tiap mesin cari

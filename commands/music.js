@@ -38,16 +38,16 @@ async function showPicker(interaction, query, started, voiceChannel) {
 
   // Semua mesin cepat kosong → jalur cadangan yt-dlp (lambat 3.5-15 detik tapi pasti)
   if (!results.length) {
-    await safeEdit(interaction, "🔎 Mesin cepat tidak menemukan apa-apa, pakai jalur cadangan (bisa 3-15 detik)...");
+    await safeEdit(interaction, "Mesin cepat tidak menemukan apa-apa, pakai jalur cadangan (bisa 3-15 detik)...");
     try {
       await client.distube.play(voiceChannel, query, {
         textChannel: interaction.channel,
         member: interaction.member,
       });
-      await safeEdit(interaction, "✅ Diputar lewat jalur cadangan.");
+      await safeEdit(interaction, "Diputar lewat jalur cadangan.");
     } catch (err) {
       console.error("Play/search error:", err);
-      await safeEdit(interaction, `❌ Gagal memutar: ${safeError(err)}`);
+      await safeEdit(interaction, `Gagal memutar: ${safeError(err)}`);
     }
     return;
   }
@@ -107,9 +107,9 @@ const commands = [
       // reply langsung (bukan deferReply) → tidak ada spinner "Thinking..." di Discord
       const query = interaction.options.getString("query");
       const started = Date.now();
-      await interaction.reply("🎵 Sedang diproses...");
+      await interaction.reply("Sedang diproses...");
 
-      // 0️⃣ User memilih saran autocomplete → lagunya sudah pasti, lewati pencarian.
+      // 0. User memilih saran autocomplete → lagunya sudah pasti, lewati pencarian.
       // Ini yang bikin play terasa instan: tidak ada searchAll, tidak ada picker.
       const picked = parseChoice(query, interaction.client);
       if (picked?.song) {
@@ -121,10 +121,10 @@ const commands = [
             textChannel: interaction.channel,
             member: interaction.member,
           });
-          await safeEdit(interaction, `▶️ Diputar: [${song.name}](${song.url})`);
+          await safeEdit(interaction, `Diputar: [${song.name}](${song.url})`);
         } catch (err) {
           console.error("[play autocomplete]", err);
-          await safeEdit(interaction, `❌ Gagal memutar: ${safeError(err)}`);
+          await safeEdit(interaction, `Gagal memutar: ${safeError(err)}`);
         }
         return;
       }
@@ -133,7 +133,7 @@ const commands = [
       // ikut terkirim, jadi tetap bisa dicari. Jangan buang jadi query sampah.
       const effective = picked?.query || query;
 
-      // 1️⃣ Spotify URL → resolved via Spotify plugin → YouTube audio
+      // 1. Spotify URL → resolved via Spotify plugin → YouTube audio
       if (spotify.parseSpotifyUrl(effective)) {
         try {
           const songOrList = await spotify.resolve(effective, distube.plugins?.spotify);
@@ -141,7 +141,7 @@ const commands = [
             textChannel: interaction.channel,
             member: interaction.member,
           });
-          await interaction.editReply("✅ Diproses dari Spotify...");
+          await interaction.editReply("Diproses dari Spotify...");
           return;
         } catch (err) {
           console.error("Spotify resolve error:", err);
@@ -149,17 +149,17 @@ const commands = [
         }
       }
 
-      // 2️⃣ Direct audio URL (mp3/mp4) → DirectLink plugin
+      // 2. Direct audio URL (mp3/mp4) → DirectLink plugin
       if (isURL(effective)) {
         await distube.play(voiceChannel, effective, {
           textChannel: interaction.channel,
           member: interaction.member,
         });
-        await interaction.editReply("✅ Diproses langsung...");
+        await interaction.editReply("Diproses langsung...");
         return;
       }
 
-      // 3️⃣ Plain query → cari multi-sumber paralel (cepat, tanpa yt-dlp) → tampil picker
+      // 3. Plain query → cari multi-sumber paralel (cepat, tanpa yt-dlp) → tampil picker
       await showPicker(interaction, effective, started, voiceChannel);
     },
   },
@@ -171,11 +171,12 @@ const commands = [
       queue.pause();
       const embed = new EmbedBuilder()
         .setColor(color)
-        .setDescription("⏸️ Lagu dijeda.");
+        .setDescription("Lagu dijeda.");
+      // Tombol tanpa emoji WAJIB punya label — tombol kosong ditolak Discord.
       const row = new ActionRowBuilder()
         .addComponents(
           new ButtonBuilder()
-            .setEmoji(queue.paused ? "▶️" : "⏸️")
+            .setLabel(queue.paused ? "Lanjutkan" : "Jeda")
             .setStyle(queue.paused ? ButtonStyle.Success : ButtonStyle.Danger)
             .setCustomId("toggle_pause"),
         );
@@ -190,13 +191,10 @@ const commands = [
       queue.resume();
       const embed = new EmbedBuilder()
         .setColor(color)
-        .setDescription("▶️ Dilanjutkan.");
+        .setDescription("Dilanjutkan.");
       const row = new ActionRowBuilder()
         .addComponents(
-          new ButtonBuilder()
-            .setEmoji("⏸️")
-            .setStyle(ButtonStyle.Danger)
-            .setCustomId("toggle_pause"),
+          new ButtonBuilder().setLabel("Jeda").setStyle(ButtonStyle.Danger).setCustomId("toggle_pause"),
         );
       await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
     },
@@ -210,10 +208,10 @@ const commands = [
         const song = await queue.skip();
         const embed = new EmbedBuilder()
           .setColor(color)
-          .setDescription(`⏭️ Skip. Sekarang: [${song.name}](${song.url})`);
+          .setDescription(`Skip. Sekarang: [${song.name}](${song.url})`);
         const row = new ActionRowBuilder()
           .addComponents(
-            new ButtonBuilder().setEmoji("⏭️").setStyle(ButtonStyle.Primary).setCustomId("skip_again"),
+            new ButtonBuilder().setLabel("Skip lagi").setStyle(ButtonStyle.Primary).setCustomId("skip_again"),
           );
         await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
       } catch {
@@ -227,7 +225,7 @@ const commands = [
       const queue = distube.getQueue(interaction.guildId);
       if (!queue) return interaction.reply({ content: noQueue, flags: MessageFlags.Ephemeral });
       distube.stop(interaction.guildId);
-      interaction.reply({ content: "⏹️ Stop. Antrian dibersihkan. Bot diam 5 menit sebelum keluar.", flags: MessageFlags.Ephemeral });
+      interaction.reply({ content: "Stop. Antrian dibersihkan. Bot diam 5 menit sebelum keluar.", flags: MessageFlags.Ephemeral });
     },
   },
   {
@@ -263,9 +261,12 @@ const commands = [
         .setFooter({ text: `Volume: ${generateVolumeBar(queue.volume)} | Loop: ${queue.repeatMode === 2 ? "Queue" : queue.repeatMode === 1 ? "Song" : "Off"}` });
       const row = new ActionRowBuilder()
         .addComponents(
-          new ButtonBuilder().setEmoji("⏭️").setStyle(ButtonStyle.Primary).setCustomId("np_skip"),
-          new ButtonBuilder().setEmoji(queue.paused ? "▶️" : "⏸️").setStyle(queue.paused ? ButtonStyle.Success : ButtonStyle.Danger).setCustomId("np_pause"),
-          new ButtonBuilder().setEmoji("🤖").setStyle(ButtonStyle.Secondary).setCustomId("np_autoplay")
+          new ButtonBuilder().setLabel("Skip").setStyle(ButtonStyle.Primary).setCustomId("np_skip"),
+          new ButtonBuilder()
+            .setLabel(queue.paused ? "Lanjutkan" : "Jeda")
+            .setStyle(queue.paused ? ButtonStyle.Success : ButtonStyle.Danger)
+            .setCustomId("np_pause"),
+          new ButtonBuilder().setLabel("Autoplay").setStyle(ButtonStyle.Secondary).setCustomId("np_autoplay"),
         );
       await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
     },
@@ -306,7 +307,7 @@ const commands = [
       if (!queue) return interaction.reply({ content: noQueue, flags: MessageFlags.Ephemeral });
       const vol = interaction.options.getInteger("angka");
       queue.setVolume(vol);
-      interaction.reply({ content: `🔊 Volume: ${generateVolumeBar(vol)}`, flags: MessageFlags.Ephemeral });
+      interaction.reply({ content: `Volume: ${generateVolumeBar(vol)}`, flags: MessageFlags.Ephemeral });
     },
   },
   {
@@ -315,7 +316,7 @@ const commands = [
       const queue = distube.getQueue(interaction.guildId);
       if (!queue) return interaction.reply({ content: noQueue, flags: MessageFlags.Ephemeral });
       queue.shuffle();
-      interaction.reply({ content: "✨ Antrian diacak.", flags: MessageFlags.Ephemeral });
+      interaction.reply({ content: "Antrian diacak.", flags: MessageFlags.Ephemeral });
     },
   },
   {
@@ -400,8 +401,8 @@ const commands = [
           .setColor(color)
           .setDescription(
             queue
-              ? "🤖 Autoplay **aktif**. Setelah antrian habis, bot memutarkan lagu dari artis/genre yang sama."
-              : "🤖 Autoplay **disimpan**. Nyalakan otomatis begitu ada lagu pertama diputar.",
+              ? "Autoplay **aktif**. Setelah antrian habis, bot memutarkan lagu dari artis/genre yang sama."
+              : "Autoplay **disimpan**. Nyalakan otomatis begitu ada lagu pertama diputar.",
           );
         return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
@@ -409,7 +410,7 @@ const commands = [
       if (mode === "off") {
         interaction.client.distubeAutoplay.set(guildId, false);
         if (queue) queue.autoplay = false;
-        const embed = new EmbedBuilder().setColor(color).setDescription("🤖 Autoplay **dimatikan**.");
+        const embed = new EmbedBuilder().setColor(color).setDescription("Autoplay **dimatikan**.");
         return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
