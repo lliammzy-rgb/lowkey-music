@@ -87,7 +87,7 @@ function storePicker(client, message, data) {
   pickers.set(message.id, { ...data, message, at: Date.now() });
   const timer = setTimeout(() => {
     if (!pickers.delete(message.id)) return; // sudah dipakai/bersih
-    message.edit({ embeds: [embed("⌛ Menu pencarian kadaluwarsa. Ulangi `/play` atau `/search` ya.")], components: [] }).catch(() => {});
+    message.edit({ embeds: [embed("⌛ Menu pencarian kadaluwarsa. Ulangi `/play` ya.")], components: [] }).catch(() => {});
   }, PICKER_TTL);
   timer.unref?.();
   return message;
@@ -166,7 +166,7 @@ async function handlePick(interaction, client) {
   const state = pickers.get(interaction.message.id);
   if (!state) {
     return interaction.reply({
-      content: "⌛ Menu ini sudah kadaluwarsa. Ulangi `/play` atau `/search`.",
+      content: "⌛ Menu ini sudah kadaluwarsa. Ulangi `/play`.",
       flags: MessageFlags.Ephemeral,
     });
   }

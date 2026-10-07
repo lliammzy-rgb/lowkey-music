@@ -375,7 +375,7 @@ const mk = (source, name, artist, score) => ({
   await handleControl(pn.it, fakeClient(null));
   assert.match(pn.calls.reply[0].content, /Belum ada antrian/);
 
-// 18. integrasi command: /search & /play query polos harus sama-sama menampilkan picker
+// 18. integrasi command: /play query polos harus menampilkan picker
   const commands = req("./commands");
   const cmd = (name) => commands.find((c) => c.data.name === name);
 
@@ -401,14 +401,11 @@ const mk = (source, name, artist, score) => ({
     return { client, calls, message };
   }
 
-  const rSearch = await runCommand("search", { inVoice: false });
-  assert.ok(rSearch.client.pickers.get("m-cmd"), "/search tanpa voice tetap harus menampilkan picker");
-  const searchView = rSearch.calls.editReply.at(-1);
-  assert.ok(searchView?.embeds?.length && searchView?.components?.length, "/search harus mengirim embed + komponen");
-  assert.strictEqual(rSearch.client.played.length, 0, "/search tidak boleh langsung memutar");
-
   const rPlay = await runCommand("play");
   assert.ok(rPlay.client.pickers.get("m-cmd"), "/play query polos harus menampilkan picker");
+  assert.strictEqual(rPlay.client.played.length, 0, "/play query polos tidak boleh langsung memutar");
+  const playView = rPlay.calls.editReply.at(-1);
+  assert.ok(playView?.embeds?.length && playView?.components?.length, "/play harus mengirim embed + komponen");
 
   const rPlayNoVc = await runCommand("play", { inVoice: false });
   assert.ok(!rPlayNoVc.client.pickers.get("m-cmd"), "/play tanpa voice harus ditolak sebelum mencari");

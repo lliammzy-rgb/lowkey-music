@@ -22,10 +22,9 @@ const notPlaying = "Belum ada lagu yang diputar.";
 const safeEdit = (interaction, payload) =>
   interaction.editReply(payload).catch((e) => console.warn(`[reply] ${e?.code ?? e?.message}`));
 
-// Cari lintas sumber lalu tampilkan menu pilih. Dipakai /play (query polos) dan /search.
-// `interaction` harus sudah di-reply "Sedang diproses..." sebelum fungsi ini dipanggil.
-// `voiceChannel` opsional: kalau tidak dikasih (/search), user memang cuma mau lihat daftar —
-// pengecekan voice dilakukan saat tombol ditekan, di picker.handlePick.
+// Cari lintas sumber lalu tampilkan menu pilih. Dipakai /play dengan query polos.
+// `interaction` harus sudah di-reply "Sedang diproses..." sebelum fungsi ini dipanggil,
+// dan `voiceChannel` sudah dipastikan ada oleh pemanggil.
 async function showPicker(interaction, query, started, voiceChannel) {
   const client = interaction.client;
   let results = [];
@@ -36,12 +35,8 @@ async function showPicker(interaction, query, started, voiceChannel) {
     console.error("[searchAll]", err);
   }
 
-  // Semua mesin cepat kosong → kalau di voice, jalur cadangan yt-dlp (lambat 3.5-15 detik tapi pasti)
+  // Semua mesin cepat kosong → jalur cadangan yt-dlp (lambat 3.5-15 detik tapi pasti)
   if (!results.length) {
-    if (!voiceChannel) {
-      await safeEdit(interaction, `🔎 Tidak menemukan hasil untuk \`${query}\`.`);
-      return;
-    }
     await safeEdit(interaction, "🔎 Mesin cepat tidak menemukan apa-apa, pakai jalur cadangan (bisa 3-15 detik)...");
     try {
       await client.distube.play(voiceChannel, query, {
@@ -122,20 +117,6 @@ const commands = [
 
       // 3️⃣ Plain query → cari multi-sumber paralel (cepat, tanpa yt-dlp) → tampil picker
       await showPicker(interaction, query, started, voiceChannel);
-    },
-  },
-  {
-    data: new SlashCommandBuilder()
-      .setName("search")
-      .setDescription("Cari lagu di banyak sumber lalu pilih dari daftar (tidak langsung bunyi)")
-      .addStringOption((o) =>
-        o.setName("query").setDescription("Judul lagu atau artis").setRequired(true),
-      ),
-    async execute(interaction) {
-      const query = interaction.options.getString("query");
-      const started = Date.now();
-      await interaction.reply("🔎 Mencari...");
-      await showPicker(interaction, query, started); // tanpa voiceChannel: lihat dulu, main nanti
     },
   },
   {

@@ -8,8 +8,7 @@ Fitur unggulan: **picker pencarian multi-sumber** (5 mesin paralel + pilih lagu 
 
 | Command | Deskripsi |
 |---|---|
-| `/play <query>` | Putar lagu — cari di 5 sumber lalu tampilkan menu pilih (link YouTube/Spotify/URL audio langsung tetap langsung jalan) |
-| `/search <query>` | Cari lagu di 5 sumber lalu pilih dari daftar — **tidak** langsung bunyi |
+| `/play <query>` | Putar lagu — link YouTube/Spotify/URL audio langsung tetap langsung jalan; judul biasa tampil menu pilih |
 | `/pause` / `/resume` | Jeda / lanjutkan |
 | `/skip` | Skip lagu sekarang |
 | `/stop` | Stop + bersihkan antrian |
@@ -25,7 +24,7 @@ Fitur unggulan: **picker pencarian multi-sumber** (5 mesin paralel + pilih lagu 
 
 ### Menu pilih hasil pencarian
 
-`/play <judul>` (tanpa link) tidak langsung memutar hasil teratas, tapi menampilkan daftar berisi 10 opsi dari 5 sumber: **YouTube, SoundCloud, Deezer, Apple Music, Tidal**. Ada tombol `⚡ Main #1`, `🎲 Acak`, `✖ Batal`, dan kadaluarsa sendiri 60 detik. Mengetik `/search` memberi hasil sama tanpa langsung memutar.
+`/play <judul>` (tanpa link) tidak langsung memutar hasil teratas, tapi menampilkan daftar berisi 10 opsi dari 5 sumber: **YouTube, SoundCloud, Deezer, Apple Music, Tidal**. Ada tombol `⚡ Main #1`, `🎲 Acak`, `✖ Batal`, dan kadaluarsa sendiri 60 detik.
 
 Sumber bertanda `⚡` bisa langsung diputar; `🔁` berarti metadata dari sumber itu lalu di-mirror ke YouTube.
 
@@ -80,7 +79,7 @@ TIDAL_TOKEN=...                  # opsional; ada token web publik bawaan, ganti 
 ```
 index.js            boot discord.js + DisTube, urutan plugin, patch getStreamURL
 events.js           event DisTube (playSong, addSong, noRelated, dll) + autoplay + router komponen
-commands/music.js   semua slash command (showPicker dipakai /play & /search)
+commands/music.js   semua slash command (showPicker untuk /play query polos)
 picker.js           menu pilih: render, state per pesan, handler tombol, progressive retry
 engines.js          5 mesin cari paralel: ytsr, Deezer, SoundCloud, iTunes, Tidal (+ withBudget)
 prefetch.js         cache getStreamURL yt-dlp (TTL 2 menit) + prefetch latar belakang
@@ -123,7 +122,7 @@ YtDlpPlugin.prototype.getRelatedSongs = getRelatedSongs;
 ```bash
 # offline, tanpa Discord & tanpa internet
 node test/crash-check.js     # 6 assertion: jalur error yang dulu mematikan bot + retry pencarian
-node test/picker-check.js    # 19 assertion: dedupe, picker UI, handler tombol, /play & /search
+node test/picker-check.js    # 19 assertion: dedupe, picker UI, handler tombol, /play
 node test/cache-check.js     # 4 assertion: cache query yt-dlp
 node test/autoplay-check.js  # 5 assertion: mesin autoplay
 

@@ -166,18 +166,19 @@ const plugins = { soundcloud, deezer: {} };
   }
   assert.strictEqual(crashed, null, `handler tidak boleh melempar keluar, dapat: ${crashed?.message}`);
 
-  // 6. /search dengan editReply + fetchReply yang gagal → tidak boleh throw, dan
+  // 6. /play dengan editReply + fetchReply yang gagal → tidak boleh throw, dan
   //    tidak boleh menyimpan state picker yatim.
-  const searchCmd = commands.find((c) => c.data.name === "search");
+  const playCmd = commands.find((c) => c.data.name === "play");
   const deadClient = new EventEmitter();
   deadClient.plugins = plugins;
   deadClient.pickers = new Map();
+  const deadDistube = { voices: { get: () => null }, play: async () => {} };
   const deadInteraction = {
     client: deadClient,
     guildId: "g1",
     channel: { id: "c1" },
     user: { id: "u1" },
-    member: { voice: { channel: null } },
+    member: { voice: { channel: { id: "vc1", name: "General" } } },
     options: { getString: () => "imagine" },
     reply: async () => {},
     editReply: async () => {
@@ -189,13 +190,13 @@ const plugins = { soundcloud, deezer: {} };
     deferred: false,
     replied: true,
   };
-  let searchCrashed = null;
+  let playCrashed = null;
   try {
-    await searchCmd.execute(deadInteraction, null);
+    await playCmd.execute(deadInteraction, deadDistube);
   } catch (e) {
-    searchCrashed = e;
+    playCrashed = e;
   }
-  assert.strictEqual(searchCrashed, null, `/search tidak boleh throw saat reply gagal: ${searchCrashed?.message}`);
+  assert.strictEqual(playCrashed, null, `/play tidak boleh throw saat reply gagal: ${playCrashed?.message}`);
   assert.strictEqual(deadClient.pickers.size, 0, "jangan simpan state picker kalau pesannya gagal dibuat");
 
   console.log("✅ crash-check: 6/6 lulus");
