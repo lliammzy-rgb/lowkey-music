@@ -11,7 +11,8 @@ const { color, statusEmbed, generateVolumeBar, miniNowPlayingFields, safeError }
 const spotify = require("../spotify");
 const { isURL } = require("distube");
 const { searchAll } = require("../search");
-const { renderPicker, storePicker, prefetchTop, progressiveYoutube } = require("../picker");
+const { renderPicker, storePicker, prefetchTop, progressiveYoutube, resolvePlayable, warmStream } = require("../picker");
+const { autocompleteSearch, parseChoice, renderChoices, MIN_CHARS } = require("../autocomplete");
 
 const notInVC = "Kamu harus ada di voice channel dulu.";
 const noQueue = "Belum ada antrian lagu.";
@@ -67,8 +68,27 @@ const commands = [
       .setName("play")
       .setDescription("Putar lagu — kasih link, atau judul yang akan tampil sebagai menu pilih")
       .addStringOption((o) =>
-        o.setName("query").setDescription("Link atau judul lagu").setRequired(true),
+        o
+          .setName("query")
+          .setDescription("Link atau judul lagu")
+          .setRequired(true)
+          .setAutocomplete(true),
       ),
+    // Saran saat masih mengetik. Ini jalur pintas: user memilih lagu yang pasti, lalu
+    // /play memutar langsung tanpa searchAll sama sekali.
+    async autocomplete(interaction, client) {
+      try {
+        const focused = interaction.options.getFocused() || "";
+        if (focused.length < MIN_CHARS) return interaction.respond([]);
+        const results = await autocompleteSearch(focused, client.plugins, { limit: 25 });
+        await interaction.respond(renderChoices(results, client));
+      } catch (err) {
+        // Autocomplete tidak boleh gagal diam: kalau tidak respond, dropdown user
+        // menggantung. Balas kosong lebih baik daripada menggantung.
+        console.warn("[autocomplete]", err?.message ?? err);
+        await interaction.respond([]).catch(() => {});
+      }
+    },
     async execute(interaction, distube) {
       const voiceChannel = interaction.member.voice.channel;
       if (!voiceChannel) return interaction.reply({ content: notInVC, flags: MessageFlags.Ephemeral });
@@ -89,10 +109,34 @@ const commands = [
       const started = Date.now();
       await interaction.reply("🎵 Sedang diproses...");
 
-      // 1️⃣ Spotify URL → resolved via Spotify plugin → YouTube audio
-      if (spotify.parseSpotifyUrl(query)) {
+      // 0️⃣ User memilih saran autocomplete → lagunya sudah pasti, lewati pencarian.
+      // Ini yang bikin play terasa instan: tidak ada searchAll, tidak ada picker.
+      const picked = parseChoice(query, interaction.client);
+      if (picked?.song) {
         try {
-          const songOrList = await spotify.resolve(query, distube.plugins?.spotify);
+          const song = await resolvePlayable(picked);
+          if (!song?.url) throw new Error("tidak nemu sumber yang bisa diputar");
+          await warmStream(interaction.client, song);
+          await distube.play(voiceChannel, song, {
+            textChannel: interaction.channel,
+            member: interaction.member,
+          });
+          await safeEdit(interaction, `▶️ Diputar: [${song.name}](${song.url})`);
+        } catch (err) {
+          console.error("[play autocomplete]", err);
+          await safeEdit(interaction, `❌ Gagal memutar: ${safeError(err)}`);
+        }
+        return;
+      }
+
+      // Token kadaluarsa (bot restart di antara mengetik & memilih) → judulnya masih
+      // ikut terkirim, jadi tetap bisa dicari. Jangan buang jadi query sampah.
+      const effective = picked?.query || query;
+
+      // 1️⃣ Spotify URL → resolved via Spotify plugin → YouTube audio
+      if (spotify.parseSpotifyUrl(effective)) {
+        try {
+          const songOrList = await spotify.resolve(effective, distube.plugins?.spotify);
           await distube.play(voiceChannel, songOrList, {
             textChannel: interaction.channel,
             member: interaction.member,
@@ -106,8 +150,8 @@ const commands = [
       }
 
       // 2️⃣ Direct audio URL (mp3/mp4) → DirectLink plugin
-      if (isURL(query)) {
-        await distube.play(voiceChannel, query, {
+      if (isURL(effective)) {
+        await distube.play(voiceChannel, effective, {
           textChannel: interaction.channel,
           member: interaction.member,
         });
@@ -116,7 +160,7 @@ const commands = [
       }
 
       // 3️⃣ Plain query → cari multi-sumber paralel (cepat, tanpa yt-dlp) → tampil picker
-      await showPicker(interaction, query, started, voiceChannel);
+      await showPicker(interaction, effective, started, voiceChannel);
     },
   },
   {

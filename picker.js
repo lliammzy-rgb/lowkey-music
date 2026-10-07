@@ -265,6 +265,8 @@ module.exports = {
   progressiveYoutube,
   handlePick,
   handleControl,
+  resolvePlayable,
+  warmStream,
   PICKER_TTL,
   PREFIX,
   formatDur,

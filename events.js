@@ -22,7 +22,22 @@ function registerEvents(client) {
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
-    // 0️⃣ Komponen (select menu + tombol). Tanpa baris ini SEMUA tombol mati: tidak ada
+    // 0️⃣ Autocomplete (/play saat user masih mengetik). WAJIB di paling atas: interaksi
+    // ini bukan chat input command, jadi tanpa cabang ini Discord tidak dapat balasan dan
+    // dropdown user menggantung sampai error. Deadline-nya cuma 3 detik.
+    if (interaction.isAutocomplete?.()) {
+      const command = client.commands.get(interaction.commandName);
+      if (!command?.autocomplete) return interaction.respond([]).catch(() => {});
+      try {
+        return await command.autocomplete(interaction, client);
+      } catch (err) {
+        console.error("[autocomplete]", err);
+        // gagal pun harus tetap dijawab, kalau tidak dropdown menggantung
+        return interaction.respond([]).catch(() => {});
+      }
+    }
+
+    // 1️⃣ Komponen (select menu + tombol). Tanpa baris ini SEMUA tombol mati: tidak ada
     // yang menangkap isStringSelectMenu()/isButton(), jadi Discord diam-diam menjatuhkan.
     if (interaction.isStringSelectMenu?.() || interaction.isButton?.()) {
       try {
