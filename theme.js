@@ -71,6 +71,25 @@ function statusEmbed(queue, song) {
     );
 }
 
+// Pesan error yt-dlp / DisTube / ffmpeg sering memuat path absolut lokal
+// (C:\Users\..., /home/..., file:///...) dan potongan keluaran mentah.
+// JANGAN kirim ke channel publik apa adanya — cukup pesan pendek + lokasi disamarkan.
+function safeError(err, max = 200) {
+  const raw = typeof err === "string" ? err : String(err?.message ?? err ?? "");
+  return raw
+    // jangan pakai lookbehind tanpa syarat: https:// akan ikut terhapus oleh pola C:\
+    .replace(/(?<![A-Za-z])[A-Za-z]:[\\/][^\s"'`]*/g, "<path>") // C:\Users\... atau C:/tmp
+    .replace(/\b\\\\[^\s"'`]*/g, "<path>") // \\server\share
+    .replace(/\bfile:\/\/[^\s"'`]*/gi, "<path>")
+    .replace(
+      /\S*(?:\/(?:home|Users|root|tmp|var|opt|usr|etc|AppData|ProgramData)\/)\S*/g,
+      "<path>",
+    )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
 // Export all functions
 module.exports = {
   color,
@@ -78,4 +97,5 @@ module.exports = {
   statusEmbed,
   generateVolumeBar,
   miniNowPlayingFields,
+  safeError,
 };

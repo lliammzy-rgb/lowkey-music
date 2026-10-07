@@ -1,14 +1,15 @@
 # Lowkey Music 🎧
 
-Discord music bot — YouTube, Spotify, SoundCloud, Deezer, direct link. Built with [DisTube v5](https://distube.js.org) + discord.js v14.
+Discord music bot — YouTube, Spotify, SoundCloud, Deezer, Apple Music, Tidal, direct link. Built with [DisTube v5](https://distube.js.org) + discord.js v14.
 
-Fitur unggulan: **autoplay native** (lagu terkait dari artis/genre yang sama), parsing link Spotify tanpa API premium, pencarian multi-sumber dengan scoring.
+Fitur unggulan: **picker pencarian multi-sumber** (5 mesin paralel + pilih lagu dari daftar), **autoplay native** (lagu terkait dari artis/genre yang sama), parsing link Spotify tanpa API premium.
 
 ## Commands
 
 | Command | Deskripsi |
 |---|---|
-| `/play <query>` | Putar lagu — judul, link YouTube, link Spotify, atau URL audio langsung |
+| `/play <query>` | Putar lagu — cari di 5 sumber lalu tampilkan menu pilih (link YouTube/Spotify/URL audio langsung tetap langsung jalan) |
+| `/search <query>` | Cari lagu di 5 sumber lalu pilih dari daftar — **tidak** langsung bunyi |
 | `/pause` / `/resume` | Jeda / lanjutkan |
 | `/skip` | Skip lagu sekarang |
 | `/stop` | Stop + bersihkan antrian |
@@ -21,6 +22,31 @@ Fitur unggulan: **autoplay native** (lagu terkait dari artis/genre yang sama), p
 | `/clear` | Bersihkan antrian (lagu yang jalan tetap dipertahankan) |
 | `/autoplay <on\|off\|status>` | Lagu terkait otomatis setelah antrian habis |
 | `/join` / `/leave` | Bot masuk / keluar voice channel |
+
+### Menu pilih hasil pencarian
+
+`/play <judul>` (tanpa link) tidak langsung memutar hasil teratas, tapi menampilkan daftar berisi 10 opsi dari 5 sumber: **YouTube, SoundCloud, Deezer, Apple Music, Tidal**. Ada tombol `⚡ Main #1`, `🎲 Acak`, `✖ Batal`, dan kadaluarsa sendiri 60 detik. Mengetik `/search` memberi hasil sama tanpa langsung memutar.
+
+Sumber bertanda `⚡` bisa langsung diputar; `🔁` berarti metadata dari sumber itu lalu di-mirror ke YouTube.
+
+## Latensi
+
+Angka terukur (live, `test/live-e2e.js`):
+
+| Tahap | Waktu |
+|---|---|
+| 5 mesin paralel → picker tampil | **~800–900ms** |
+| `getStreamURL` yt-dlp sebelum prefetch | 3.1–5.8s |
+| `getStreamURL` sesudah prefetch (klik rank 1-3) | **0ms** |
+| Klik → audio bunyi (bot belum di VC) | **~1.2–2.3s** |
+| Klik → masuk antrian (bot sudah di VC) | **0ms** |
+
+Bagaimana bisa secepat itu padahal yt-dlp butuh 3-6 detik per URL:
+
+1. `searchAll` tidak memakai yt-dlp sama sekali — 5 mesin HTTP (`engines.js`) jalan paralel, masing-masing dipatok budget (`withBudget`, YouTube 900ms, SoundCloud 600ms). Yang lambat dibuang, picker tetap tampil.
+2. Selama user membaca menu (2-5 detik), `prefetchTop` sudah menyelesaikan `getStreamURL` untuk rank 1-3 di latar belakang.
+3. Waktu diklik, `warmStream` mengisi `song.stream.url` dari cache, dan `DisTube.attachStreamInfo` melakukan short-circuit pertama — `if (song.stream.url) return;` — sehingga tidak ada yt-dlp yang di-spawn ulang. Objek `Song` juga dilewatkan langsung, jadi `resolve()` tidak jalan.
+4. Kalau YouTube kena rate limit, picker tetap tampil dari sumber lain, lalu `progressiveYoutube` mencoba ulang 3 kali dan menyisipkan hasil YouTube ke menu yang sama.
 
 ## Setup
 
@@ -38,7 +64,10 @@ DISCORD_CLIENT_ID=app_id
 DISCORD_GUILD_ID=guild_id        # opsional; kalau ada → guild commands (instan), kalau tidak → global (menyebar ~1 jam)
 SPOTIFY_ID=...                   # opsional; tanpa ini link Spotify tetap jalan (fallback cari judul via YouTube)
 SPOTIFY_SECRET=...
+TIDAL_TOKEN=...                  # opsional; ada token web publik bawaan, ganti hanya kalau Tidal balas 401
 ```
+
+> Permission bot di voice channel: butuh `Connect` + `Speak`. Kalau sebuah VC memberi *deny* `Connect` untuk `@everyone`, bot tidak akan bisa masuk ke situ — cek dengan Discord → Edit Channel → Permissions.
 
 ### Persyaratan
 
@@ -49,16 +78,20 @@ SPOTIFY_SECRET=...
 ## Arsitektur singkat
 
 ```
-index.js            boot discord.js + DisTube, urutan plugin
-events.js           event DisTube (playSong, addSong, noRelated, dll) + autoplay
-commands/music.js   semua slash command
+index.js            boot discord.js + DisTube, urutan plugin, patch getStreamURL
+events.js           event DisTube (playSong, addSong, noRelated, dll) + autoplay + router komponen
+commands/music.js   semua slash command (showPicker dipakai /play & /search)
+picker.js           menu pilih: render, state per pesan, handler tombol, progressive retry
+engines.js          5 mesin cari paralel: ytsr, Deezer, SoundCloud, iTunes, Tidal (+ withBudget)
+prefetch.js         cache getStreamURL yt-dlp (TTL 2 menit) + prefetch latar belakang
 ytsearch.js         YtSearchPlugin: search YouTube + getRelatedSongs (mesin autoplay)
-search.js           scoring multi-sumber (YouTube/SoundCloud/Deezer) → 1 hasil terbaik
+search.js           scoring multi-sumber, dedupe lintas sumber, searchAll (fan-out)
 spotify.js          parse & resolve link Spotify (tanpa API premium)
 deezer.js           modul Deezer public API (opsional, tidak dipakai flow saat ini)
 theme.js            format embed, durasi, volume bar
 scripts/patch-ytdlp.js  patch kompatibilitas yt-dlp (dijalankan via postinstall)
-test/               autoplay-check.js (unit) + autoplay-live.js (harness live)
+test/               picker-check.js, cache-check.js, autoplay-check.js (unit, offline)
+                    engines-live.js, search-all-live.js, live-e2e.js (harness live)
 ```
 
 ### Urutan plugin (penting!)
@@ -88,11 +121,18 @@ YtDlpPlugin.prototype.getRelatedSongs = getRelatedSongs;
 ## Testing
 
 ```bash
-node test/autoplay-check.js   # 5 assertion unit (offline, tanpa Discord)
-node test/autoplay-live.js    # harness live: butuh .env, bot TIDAK boleh jalan ganda
+# offline, tanpa Discord & tanpa internet
+node test/picker-check.js    # 18 assertion: dedupe, picker UI, handler tombol, /play & /search
+node test/cache-check.js     # 4 assertion: cache query yt-dlp
+node test/autoplay-check.js  # 5 assertion: mesin autoplay
+
+# live, butuh internet (+ .env untuk yang e2e)
+node test/engines-live.js        # bentuk data + latency tiap mesin cari
+node test/search-all-live.js     # urutan rank hasil searchAll + preview embed
+node test/live-e2e.js            # boot bot beneran: kirim picker ke Discord, ukur prefetch, play audio
 ```
 
-`autoplay-live.js` menggabungkan bot ke voice channel, memutar video pendek, lalu memverifikasi lagu related otomatis diputar. Hentikan `npm start` dulu sebelum menjalankannya.
+`live-e2e.js` menggabungkan bot ke voice channel, memutar lagu, lalu membersihkannya. Bot `npm start` **tidak boleh** jalan ganda saat itu. Channel targetnya bisa di-override lewat `LIVE_TEXT_CHANNEL` / `LIVE_VOICE_CHANNEL`.
 
 ## Catatan yt-dlp
 

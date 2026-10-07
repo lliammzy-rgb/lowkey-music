@@ -17,6 +17,7 @@
     "@distube/soundcloud": "^2.0.4",
     "@distube/spotify": "^2.0.2",
     "@distube/yt-dlp": "^2.0.1",
+    "@distube/ytsr": "^2.0.4",
     "@goul4rt/mcp-discord": "^0.3.0",
     "discord.js": "^14.16.3",
     "distube": "^5.0.7",

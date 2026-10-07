@@ -1,9 +1,12 @@
-const { EmbedBuilder, Events } = require("discord.js");
-const { color, statusEmbed } = require("./theme");
+const { EmbedBuilder, Events, ChannelType } = require("discord.js");
+const { color, statusEmbed, safeError } = require("./theme");
+const { handlePick, handleControl, PREFIX: PICK_PREFIX } = require("./picker");
 
 function registerEvents(client) {
   // Initialize autoplay Map on client
   client.distubeAutoplay = client.distubeAutoplay || new Map();
+  // messageId → state picker (/play). Dibuat di sini supaya picker.js tidak perlu init.
+  client.pickers = client.pickers || new Map();
 
   client.once(Events.ClientReady, (c) => {
     console.log(`Bot online sebagai ${c.user.tag}`);
@@ -11,6 +14,21 @@ function registerEvents(client) {
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
+    // 0️⃣ Komponen (select menu + tombol). Tanpa baris ini SEMUA tombol mati: tidak ada
+    // yang menangkap isStringSelectMenu()/isButton(), jadi Discord diam-diam menjatuhkan.
+    if (interaction.isStringSelectMenu?.() || interaction.isButton?.()) {
+      try {
+        if (interaction.customId.startsWith(PICK_PREFIX)) return await handlePick(interaction, client);
+        return await handleControl(interaction, client);
+      } catch (err) {
+        console.error("[component]", err);
+        const m = { content: "Ada error di tombol. Coba lagi.", flags: 1 << 6 };
+        if (interaction.deferred || interaction.replied) await interaction.followUp(m).catch(() => {});
+        else await interaction.reply(m).catch(() => {});
+      }
+      return;
+    }
+
     if (!interaction.isChatInputCommand()) return;
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -24,6 +42,22 @@ function registerEvents(client) {
     }
   });
 
+  // Status di bawah nama voice channel: "♬ Judul - Artis"
+  // Endpoint resmi: PUT /channels/{id}/voice-status (belum ada wrapper di discord.js 14)
+  // Butuh permission SET_VOICE_CHANNEL_STATUS di role bot
+  function setVoiceStatus(queue, text) {
+    const ch = queue.voice?.channel;
+    if (!ch || ch.type !== ChannelType.GuildVoice) return;
+    fetch(`https://discord.com/api/v10/channels/${ch.id}/voice-status`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bot ${process.env.DISCORD_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: text }),
+    }).catch(() => {});
+  }
+
   // === Autoplay ===
   // Pakai autoplay NATIVE DisTube (queue.autoplay + _addRelatedSong). Tidak ada handler
   // "finish" sendiri: kalau queue.autoplay true, DisTube tidak emit finish dan tidak
@@ -35,6 +69,8 @@ function registerEvents(client) {
   client.distube.on("playSong", (queue, song) => {
     // PENTING: Queue DisTube v5 TIDAK punya `.guildId` — id queue = guild id (`.id`)
     queue.autoplay = Boolean(client.distubeAutoplay?.get(queue.id));
+
+    setVoiceStatus(queue, `♬ ${song.name} - ${song.uploader?.name ?? "unknown"}`);
 
     // Lagu yang "diminta" bot = hasil autoplay → embed beda dari request user
     const isAutoplay = queue.autoplay && song.member?.id === client.user.id;
@@ -85,10 +121,11 @@ function registerEvents(client) {
 
   client.distube.on("error", (error, queue) => {
     console.error(error);
-    queue?.textChannel?.send({ content: `Error: \`${error.message?.slice(0, 200) ?? error}\`` }).catch(() => {});
+    queue?.textChannel?.send({ content: `Error: \`${safeError(error)}\`` }).catch(() => {});
   });
 
   client.distube.on("deleteQueue", (queue) => {
+    setVoiceStatus(queue, ""); // hapus status saat tidak ada lagu
     client.distube.voices.leave(queue.id);
   });
 }

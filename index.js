@@ -8,6 +8,7 @@ const { DirectLinkPlugin } = require("@distube/direct-link");
 const { YtDlpPlugin } = require("@distube/yt-dlp");
 const { YtSearchPlugin, getRelatedSongs } = require("./ytsearch");
 const { registerEvents } = require("./events");
+const { installStreamCache } = require("./prefetch");
 const commands = require("./commands");
 
 const client = new Client({
@@ -32,6 +33,10 @@ const ytSearchPlugin = new YtSearchPlugin({ update: false });
 // WAJIB: @distube/yt-dlp bawaan getRelatedSongs() => [] → autoplay native DisTube selalu
 // NO_RELATED → queue dibuang → bot keluar voice. Ganti dengan pencarian YouTube.
 YtDlpPlugin.prototype.getRelatedSongs = getRelatedSongs;
+// Cache getStreamURL: terukur 3.5-15 detik per resolusi URL YouTube. Tapi user butuh
+// 2-5 detik buat baca menu picker — waktu itu dipakai buat resolve rank 1-3.
+// DisTube memanggil plugin.getStreamURL() sama seperti biasa, hanya hasilnya di-cache 2 menit.
+installStreamCache();
 
 const distube = new DisTube.default(client, {
   // yt-dlp WAJIB plugin terakhir: validate() selalu true jadi menangkap semua URL

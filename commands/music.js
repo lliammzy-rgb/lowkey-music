@@ -7,19 +7,64 @@ const {
   PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
-const { color, statusEmbed, generateVolumeBar, miniNowPlayingFields } = require("../theme");
+const { color, statusEmbed, generateVolumeBar, miniNowPlayingFields, safeError } = require("../theme");
 const spotify = require("../spotify");
 const { isURL } = require("distube");
+const { searchAll } = require("../search");
+const { renderPicker, storePicker, prefetchTop, progressiveYoutube } = require("../picker");
 
 const notInVC = "Kamu harus ada di voice channel dulu.";
 const noQueue = "Belum ada antrian lagu.";
 const notPlaying = "Belum ada lagu yang diputar.";
 
+// Cari lintas sumber lalu tampilkan menu pilih. Dipakai /play (query polos) dan /search.
+// `interaction` harus sudah di-reply "Sedang diproses..." sebelum fungsi ini dipanggil.
+// `voiceChannel` opsional: kalau tidak dikasih (/search), user memang cuma mau lihat daftar —
+// pengecekan voice dilakukan saat tombol ditekan, di picker.handlePick.
+async function showPicker(interaction, query, started, voiceChannel) {
+  const client = interaction.client;
+  let results = [];
+  let ytOk = true;
+  try {
+    ({ results, ytOk } = await searchAll(query, client.plugins, { budget: 900, limit: 10 }));
+  } catch (err) {
+    console.error("[searchAll]", err);
+  }
+
+  // Semua mesin cepat kosong → kalau di voice, jalur cadangan yt-dlp (lambat 3.5-15 detik tapi pasti)
+  if (!results.length) {
+    if (!voiceChannel) {
+      await interaction.editReply(`🔎 Tidak menemukan hasil untuk \`${query}\`.`);
+      return;
+    }
+    await interaction.editReply("🔎 Mesin cepat tidak menemukan apa-apa, pakai jalur cadangan (bisa 3-15 detik)...");
+    try {
+      await client.distube.play(voiceChannel, query, {
+        textChannel: interaction.channel,
+        member: interaction.member,
+      });
+      await interaction.editReply("✅ Diputar lewat jalur cadangan.");
+    } catch (err) {
+      console.error("Play/search error:", err);
+      await interaction.editReply(`❌ Gagal memutar: ${safeError(err)}`);
+    }
+    return;
+  }
+
+  await interaction.editReply(renderPicker(query, results, Date.now() - started));
+  const message = await interaction.fetchReply();
+  storePicker(client, message, { results, query, requester: interaction.user.id });
+  // user masih baca menu (2-5 detik) = waktu gratis buat nge-resolve stream rank 1-3
+  prefetchTop(client, results);
+  // ytsr sempat gagal → tambahkan hasil YouTube ke menu yang sama saat sudah pulih
+  if (!ytOk) progressiveYoutube(query, message.id, client).catch(() => {});
+}
+
 const commands = [
   {
     data: new SlashCommandBuilder()
       .setName("play")
-      .setDescription("Putar lagu — otomatis cari versi terbaik, atau kasih link")
+      .setDescription("Putar lagu — kasih link, atau judul yang akan tampil sebagai menu pilih")
       .addStringOption((o) =>
         o.setName("query").setDescription("Link atau judul lagu").setRequired(true),
       ),
@@ -38,9 +83,11 @@ const commands = [
         }
       }
       
-      await interaction.deferReply();
+      // reply langsung (bukan deferReply) → tidak ada spinner "Thinking..." di Discord
       const query = interaction.options.getString("query");
-      
+      const started = Date.now();
+      await interaction.reply("🎵 Sedang diproses...");
+
       // 1️⃣ Spotify URL → resolved via Spotify plugin → YouTube audio
       if (spotify.parseSpotifyUrl(query)) {
         try {
@@ -49,35 +96,40 @@ const commands = [
             textChannel: interaction.channel,
             member: interaction.member,
           });
-          await interaction.editReply("Diproses dari Spotify...");
+          await interaction.editReply("✅ Diproses dari Spotify...");
           return;
         } catch (err) {
           console.error("Spotify resolve error:", err);
-          // Jika gagal, turun ke pencarian YouTube biasa (lanjut ke baris 50)
+          // Jika gagal, turun ke pencarian YouTube biasa (lanjut ke bawah)
         }
       }
-      
+
       // 2️⃣ Direct audio URL (mp3/mp4) → DirectLink plugin
       if (isURL(query)) {
         await distube.play(voiceChannel, query, {
           textChannel: interaction.channel,
           member: interaction.member,
         });
-        await interaction.editReply("Diproses langsung...");
+        await interaction.editReply("✅ Diproses langsung...");
         return;
       }
-      
-      // 3️⃣ Plain query → DisTube auto-search (YouTube default via plugin)
-      try {
-        await distube.play(voiceChannel, query, {
-          textChannel: interaction.channel,
-          member: interaction.member,
-        });
-        await interaction.editReply("Diproses pencarian...");
-      } catch (err) {
-        console.error("Play/search error:", err);
-        await interaction.followUp({ content: `Gagal memutar/lari: ${err.message}`, flags: MessageFlags.Ephemeral });
-      }
+
+      // 3️⃣ Plain query → cari multi-sumber paralel (cepat, tanpa yt-dlp) → tampil picker
+      await showPicker(interaction, query, started, voiceChannel);
+    },
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName("search")
+      .setDescription("Cari lagu di banyak sumber lalu pilih dari daftar (tidak langsung bunyi)")
+      .addStringOption((o) =>
+        o.setName("query").setDescription("Judul lagu atau artis").setRequired(true),
+      ),
+    async execute(interaction) {
+      const query = interaction.options.getString("query");
+      const started = Date.now();
+      await interaction.reply("🔎 Mencari...");
+      await showPicker(interaction, query, started); // tanpa voiceChannel: lihat dulu, main nanti
     },
   },
   {

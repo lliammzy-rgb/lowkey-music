@@ -1,5 +1,6 @@
 const { Song } = require("distube");
 const { json: ytdlpJson } = require("@distube/yt-dlp");
+const { withBudget, itunesSearch, tidalSearch, ytsrSearch, DIRECT_SOURCES } = require("./engines");
 
 const DEEZER_API = "https://api.deezer.com";
 
@@ -63,6 +64,7 @@ async function deezerSearch(query, plugin) {
           url: track.link,
           name: track.title,
           uploader: { name: track.artist.name },
+          duration: track.duration || 0,
           thumbnail: track.album.cover_xl || track.album.cover_big || track.album.cover_medium || track.album.cover,
         },
         {},
@@ -70,28 +72,45 @@ async function deezerSearch(query, plugin) {
   );
 }
 
+// cache data mentah hasil yt-dlp search, TTL 30 detik — query sama berulang jadi instan
+// Song tidak di-cache: DisTube mutasi song.member per request, instance dibagikan = requester tertimpa
+// ponytail: tanpa batas ukuran (dibersihkan saat baca); tambah LRU eviction kalau memory jadi masalah
+const SEARCH_TTL = 30_000;
+const searchCache = new Map();
+
 async function youtubeSearch(query) {
+  const key = normalize(query).toLowerCase();
+  const hit = searchCache.get(key);
+  if (hit && Date.now() - hit.at < SEARCH_TTL) return hit.entries.map(toSong);
+
   const info = await ytdlpJson(`ytsearch5:${query}`, {
     dumpSingleJson: true,
     noWarnings: true,
     skipDownload: true,
     simulate: true,
   });
-  return (info.entries || []).map(
-    (e) =>
-      new Song(
-        {
-          source: "youtube",
-          playFromSource: true,
-          id: e.id,
-          url: e.webpage_url || e.original_url,
-          name: e.title,
-          uploader: { name: e.uploader, url: e.uploader_url },
-          thumbnail: e.thumbnail,
-          duration: e.duration || 0,
-        },
-        {},
-      ),
+  const entries = (info.entries || []).filter((e) => e && e.id);
+  const now = Date.now();
+  searchCache.set(key, { at: now, entries });
+  if (searchCache.size > 500) {
+    for (const [k, v] of searchCache) if (now - v.at > SEARCH_TTL) searchCache.delete(k);
+  }
+  return entries.map(toSong);
+}
+
+function toSong(e) {
+  return new Song(
+    {
+      source: "youtube",
+      playFromSource: true,
+      id: e.id,
+      url: e.webpage_url || e.original_url,
+      name: e.title,
+      uploader: { name: e.uploader, url: e.uploader_url },
+      thumbnail: e.thumbnail,
+      duration: e.duration || 0,
+    },
+    {},
   );
 }
 
@@ -141,4 +160,87 @@ async function searchBestYoutube(query) {
   return pickBest(songs.map((s) => ({ song: s, score: scoreCandidate(s, tokens, 0) })));
 }
 
-module.exports = { autoSearch, searchBestYoutube, youtubeSearch };
+// Bobot sumber. YouTube paling tinggi karena: paling relevan + punya getStreamURL
+// (prefetchable → ~100ms). Apple/Tidal sama-sama bobot rendah karena tidak punya plugin
+// streaming DisTube → harus di-mirror ke YouTube.
+const SOURCE_WEIGHT = { youtube: 0.6, soundcloud: 0.4, deezer: 0.25, tidal: 0.15, apple: 0.15 };
+
+// Batas tiap sumber (ms). Wall-clock total = max dari budget ini, bukan jumlahnya
+// (semua jalan paralel via Promise.all). SoundCloud paling ketat: pernah hang total.
+const SOURCE_CAP = { youtube: 900, soundcloud: 600, deezer: 900, apple: 900, tidal: 900 };
+
+// Satu lagu dari beberapa sumber → satu baris. Key = judul + artis ternormalisasi
+// ("Imagine - John Lennon" di Apple+Deezer+Tidal+YouTube = 1 entri).
+// Kalau kalah menang: yang di-keep = sumber paling gampang dimainkan, tapi posisi di
+// daftar tetap yang tertinggi — supaya rank #1 tidak berubah akibat penggantian.
+function dedupe(ranked) {
+  const seen = new Map();
+  for (const cand of ranked) {
+    if (!cand?.song) continue;
+    const key = normalize(`${cand.song.name} ${cand.song.uploader?.name || ""}`);
+    if (!key) continue;
+    const prev = seen.get(key);
+    if (!prev) {
+      seen.set(key, cand);
+      continue;
+    }
+    if (DIRECT_SOURCES.has(cand.song.source) && !DIRECT_SOURCES.has(prev.song.source)) {
+      // warisi metadata milik sumber lain supaya thumbnail/durasi tidak hilang
+      cand.song.thumbnail ||= prev.song.thumbnail;
+      cand.song.duration ||= prev.song.duration;
+      seen.set(key, cand);
+    }
+  }
+  return [...seen.values()];
+}
+
+// Cari lintas sumber secara paralel → daftar hasil untuk picker /play.
+// TIDAK memakai yt-dlp (terukur 3.5-15 detik) — itu jalur cadangan kalau semua ini kosong.
+// Mengembalikan { results, ytOk }: ytOk=false dipakai progressive retry YouTube.
+async function searchAll(query, plugins, { budget = 900, limit = 10 } = {}) {
+  const tokens = normalize(query).split(" ").filter(Boolean);
+  const jobs = [
+    { key: "youtube", fn: () => ytsrSearch(query, 6) },
+    { key: "soundcloud", fn: () => soundcloudSearch(query, plugins?.soundcloud) },
+    { key: "deezer", fn: () => deezerSearch(query, plugins?.deezer) },
+    { key: "apple", fn: () => itunesSearch(query, 6) },
+    { key: "tidal", fn: () => tidalSearch(query, 6) },
+  ];
+
+  const fanOut = async (ms) => {
+    const settled = await Promise.all(
+      jobs.map(async (job) => {
+        const songs = await withBudget(job.fn(), Math.min(ms, SOURCE_CAP[job.key]), job.key);
+        return songs.map((song) => ({
+          song,
+          score: scoreCandidate(song, tokens, SOURCE_WEIGHT[job.key] || 0),
+          kind: DIRECT_SOURCES.has(song.source) ? "direct" : "mirror",
+        }));
+      }),
+    );
+    const flat = settled.flat().filter((c) => c.song);
+    flat.sort((a, b) => b.score - a.score);
+    return { flat, ytOk: flat.some((c) => c.song.source === "youtube") };
+  };
+
+  let out = await fanOut(budget);
+  // Semua mesin kosong (biasanya rate limit, bukan kasus "lagu tidak ada") → coba sekali lagi
+  // dengan budget dobel. Tetap jauh lebih murah daripada langsung jatuh ke yt-dlp (5-15 detik).
+  if (!out.flat.length) {
+    console.warn(`[search] semua mesin kosong, retry budget ${Math.min(budget * 2, 3000)}ms`);
+    out = await fanOut(Math.min(budget * 2, 3000));
+  }
+
+  return { results: dedupe(out.flat).slice(0, limit), ytOk: out.ytOk };
+}
+
+module.exports = {
+  autoSearch,
+  searchBestYoutube,
+  youtubeSearch,
+  searchAll,
+  dedupe,
+  normalize,
+  scoreCandidate,
+  pickBest,
+};
